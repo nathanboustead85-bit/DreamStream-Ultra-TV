@@ -442,7 +442,7 @@ class MainActivity : Activity() {
             }
         )
 
-        // NEW LIVE TV SCREEN
+        // LIVE TV
         root.addView(
             tile(
                 "LIVE TV",
@@ -476,7 +476,7 @@ class MainActivity : Activity() {
             }
         )
 
-        // EXISTING SEVEN-DAY SMART EPG
+        // SEVEN-DAY SMART EPG
         root.addView(
             tile(
                 "SMART TV GUIDE",
@@ -493,6 +493,7 @@ class MainActivity : Activity() {
             }
         )
 
+        // MOVIES
         root.addView(
             tile(
                 "MOVIES",
@@ -502,6 +503,7 @@ class MainActivity : Activity() {
             }
         )
 
+        // SERIES
         root.addView(
             tile(
                 "SERIES",
@@ -511,6 +513,7 @@ class MainActivity : Activity() {
             }
         )
 
+        // FAVOURITES
         root.addView(
             tile(
                 "MY FAVOURITES",
@@ -526,6 +529,7 @@ class MainActivity : Activity() {
             }
         )
 
+        // SPORTS NEWS
         root.addView(
             tile(
                 "SPORTS NEWS",
@@ -540,6 +544,7 @@ class MainActivity : Activity() {
             }
         )
 
+        // LIVE SPORTS FINDER
         root.addView(
             tile(
                 "LIVE SPORTS FINDER",
@@ -554,6 +559,37 @@ class MainActivity : Activity() {
             }
         )
 
+        // NEW SETTINGS SCREEN
+        root.addView(
+            tile(
+                "SETTINGS",
+                "Playback, watch history and account"
+            ) {
+                val selected = account
+
+                if (selected != null) {
+                    startActivity(
+                        Intent(
+                            this,
+                            SettingsActivity::class.java
+                        ).apply {
+                            putExtra(
+                                "server_index",
+                                XtreamApi.servers.indexOf(
+                                    selected.server
+                                )
+                            )
+                            putExtra(
+                                "username",
+                                selected.username
+                            )
+                        }
+                    )
+                }
+            }
+        )
+
+        // LOG OUT
         root.addView(
             button("Log out") {
                 account = null
