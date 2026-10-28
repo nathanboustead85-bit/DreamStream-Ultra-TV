@@ -44,12 +44,20 @@ class LiveTvActivity : Activity() {
     private var searchQuery = ""
     private var mode = "all"
 
+    private var activeChannelList =
+        emptyList<XtreamApi.Stream>()
+
+    private val playerRequestCode = 101
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val serverIndex = intent.getIntExtra(
             "server_index", 0
-        ).coerceIn(0, XtreamApi.servers.lastIndex)
+        ).coerceIn(
+            0,
+            XtreamApi.servers.lastIndex
+        )
 
         val username =
             intent.getStringExtra("username").orEmpty()
@@ -57,7 +65,10 @@ class LiveTvActivity : Activity() {
         val password =
             intent.getStringExtra("password").orEmpty()
 
-        if (username.isBlank() || password.isBlank()) {
+        if (
+            username.isBlank() ||
+            password.isBlank()
+        ) {
             finish()
             return
         }
@@ -73,8 +84,11 @@ class LiveTvActivity : Activity() {
     }
 
     private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density + 0.5f)
-            .toInt()
+        (
+            value *
+            resources.displayMetrics.density +
+            0.5f
+        ).toInt()
 
     private fun label(
         value: String,
@@ -84,9 +98,12 @@ class LiveTvActivity : Activity() {
         text = value
         textSize = size
         setTextColor(colour)
+
         setPadding(
-            dp(10), dp(10),
-            dp(10), dp(10)
+            dp(10),
+            dp(10),
+            dp(10),
+            dp(10)
         )
     }
 
@@ -108,9 +125,12 @@ class LiveTvActivity : Activity() {
 
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+
             setPadding(
-                dp(14), dp(12),
-                dp(14), dp(18)
+                dp(14),
+                dp(12),
+                dp(14),
+                dp(18)
             )
         }
 
@@ -119,15 +139,21 @@ class LiveTvActivity : Activity() {
 
         root.addView(
             label(title, 25f, cyan).apply {
-                setTypeface(null, Typeface.BOLD)
+                setTypeface(
+                    null,
+                    Typeface.BOLD
+                )
             }
         )
     }
 
     private fun showLoading() {
         screen("DREAMSTREAM • LIVE TV")
+
         root.addView(
-            label("Loading channels and categories...")
+            label(
+                "Loading channels and categories..."
+            )
         )
     }
 
@@ -135,15 +161,24 @@ class LiveTvActivity : Activity() {
         executor.execute {
             try {
                 val foundCategories =
-                    XtreamApi.categories(account, "live")
+                    XtreamApi.categories(
+                        account,
+                        "live"
+                    )
 
                 val foundChannels =
-                    XtreamApi.streams(account, "live")
+                    XtreamApi.streams(
+                        account,
+                        "live"
+                    )
 
                 val foundLogos = loadLogos()
 
                 runOnUiThread {
-                    if (isFinishing || isDestroyed) {
+                    if (
+                        isFinishing ||
+                        isDestroyed
+                    ) {
                         return@runOnUiThread
                     }
 
@@ -155,7 +190,10 @@ class LiveTvActivity : Activity() {
                 }
             } catch (error: Exception) {
                 runOnUiThread {
-                    if (isFinishing || isDestroyed) {
+                    if (
+                        isFinishing ||
+                        isDestroyed
+                    ) {
                         return@runOnUiThread
                     }
 
@@ -180,44 +218,67 @@ class LiveTvActivity : Activity() {
     }
 
     private fun encode(value: String): String =
-        URLEncoder.encode(value, "UTF-8")
+        URLEncoder.encode(
+            value,
+            "UTF-8"
+        )
 
     private fun loadLogos(): Map<String, String> {
-        val base = account.server.url.trimEnd('/')
+        val base =
+            account.server.url.trimEnd('/')
 
-        val url = "$base/player_api.php" +
+        val url =
+            "$base/player_api.php" +
             "?username=${encode(account.username)}" +
             "&password=${encode(account.password)}" +
             "&action=get_live_streams"
 
         val connection =
-            URL(url).openConnection() as HttpURLConnection
+            URL(url).openConnection()
+                as HttpURLConnection
 
         connection.connectTimeout = 12000
         connection.readTimeout = 20000
 
         try {
-            if (connection.responseCode !in 200..299) {
+            if (
+                connection.responseCode
+                !in 200..299
+            ) {
                 return emptyMap()
             }
 
-            val raw = connection.inputStream
-                .bufferedReader()
-                .use { it.readText() }
+            val raw =
+                connection.inputStream
+                    .bufferedReader()
+                    .use {
+                        it.readText()
+                    }
 
             val json = JSONArray(raw)
-            val result = mutableMapOf<String, String>()
 
-            for (index in 0 until json.length()) {
-                val item = json.optJSONObject(index)
-                    ?: continue
+            val result =
+                mutableMapOf<String, String>()
 
-                val id = item.optString("stream_id")
-                val icon = item.optString("stream_icon")
+            for (
+                index in 0 until json.length()
+            ) {
+                val item =
+                    json.optJSONObject(index)
+                        ?: continue
+
+                val id =
+                    item.optString("stream_id")
+
+                val icon =
+                    item.optString("stream_icon")
 
                 if (
                     id.isNotBlank() &&
-                    icon.startsWith("https://", true)
+                    icon.startsWith(
+                        "https://",
+                        true
+                    )
                 ) {
                     result[id] = icon
                 }
@@ -235,7 +296,9 @@ class LiveTvActivity : Activity() {
         stream: XtreamApi.Stream
     ): ImageView {
         val image = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.FIT_CENTER
+            scaleType =
+                ImageView.ScaleType.FIT_CENTER
+
             setImageResource(
                 android.R.drawable.ic_menu_gallery
             )
@@ -263,13 +326,20 @@ class LiveTvActivity : Activity() {
 
                         val bitmap =
                             connection.inputStream.use {
-                                BitmapFactory.decodeStream(it)
+                                BitmapFactory.decodeStream(
+                                    it
+                                )
                             }
 
                         if (bitmap != null) {
                             runOnUiThread {
-                                if (!isFinishing && !isDestroyed) {
-                                    image.setImageBitmap(bitmap)
+                                if (
+                                    !isFinishing &&
+                                    !isDestroyed
+                                ) {
+                                    image.setImageBitmap(
+                                        bitmap
+                                    )
                                 }
                             }
                         }
@@ -285,29 +355,135 @@ class LiveTvActivity : Activity() {
     }
 
     private fun play(
-        stream: XtreamApi.Stream
+        stream: XtreamApi.Stream,
+        visibleChannels: List<XtreamApi.Stream>
     ) {
         RecentChannelsStore.add(
-            this, account, stream
+            this,
+            account,
+            stream
         )
 
-        startActivity(
-            Intent(
-                this,
-                PlayerActivity::class.java
-            ).putExtra(
-                "url",
-                XtreamApi.playbackUrl(account, stream)
+        val available = visibleChannels
+            .filter { it.type == "live" }
+            .take(100)
+
+        val selectedIndex =
+            available.indexOfFirst {
+                it.id == stream.id
+            }
+
+        val playerIntent = Intent(
+            this,
+            PlayerActivity::class.java
+        ).putExtra(
+            "url",
+            XtreamApi.playbackUrl(
+                account,
+                stream
             )
+        ).putExtra(
+            "channel_name",
+            stream.title
         )
+
+        if (selectedIndex >= 0) {
+            activeChannelList = available
+
+            playerIntent.putStringArrayListExtra(
+                "channel_names",
+                ArrayList(
+                    available.map {
+                        it.title
+                    }
+                )
+            )
+
+            playerIntent.putStringArrayListExtra(
+                "channel_urls",
+                ArrayList(
+                    available.map {
+                        XtreamApi.playbackUrl(
+                            account,
+                            it
+                        )
+                    }
+                )
+            )
+
+            playerIntent.putExtra(
+                "channel_index",
+                selectedIndex
+            )
+        } else {
+            activeChannelList = listOf(stream)
+        }
+
+        @Suppress("DEPRECATION")
+        startActivityForResult(
+            playerIntent,
+            playerRequestCode
+        )
+    }
+
+    @Deprecated(
+        "Used for compatibility with the current Activity implementation"
+    )
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?
+    ) {
+        super.onActivityResult(
+            requestCode,
+            resultCode,
+            data
+        )
+
+        if (
+            requestCode == playerRequestCode &&
+            resultCode == RESULT_OK
+        ) {
+            val lastUrl =
+                data?.getStringExtra(
+                    "last_channel_url"
+                )
+
+            if (lastUrl != null) {
+                val lastStream =
+                    activeChannelList.firstOrNull {
+                        XtreamApi.playbackUrl(
+                            account,
+                            it
+                        ) == lastUrl
+                    }
+
+                if (lastStream != null) {
+                    RecentChannelsStore.add(
+                        this,
+                        account,
+                        lastStream
+                    )
+                }
+            }
+        }
+
+        if (
+            requestCode == playerRequestCode &&
+            !isFinishing
+        ) {
+            showLibrary()
+        }
     }
 
     private fun showLibrary() {
         screen("DREAMSTREAM • LIVE TV")
 
-        val tabs = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
+        val tabs =
+            LinearLayout(this).apply {
+                orientation =
+                    LinearLayout.HORIZONTAL
+            }
 
         root.addView(tabs)
 
@@ -332,9 +508,14 @@ class LiveTvActivity : Activity() {
         root.addView(
             label(
                 when (mode) {
-                    "recent" -> "RECENTLY WATCHED"
-                    "favourites" -> "FAVOURITE CHANNELS"
-                    else -> "ALL LIVE CHANNELS"
+                    "recent" ->
+                        "RECENTLY WATCHED"
+
+                    "favourites" ->
+                        "FAVOURITE CHANNELS"
+
+                    else ->
+                        "ALL LIVE CHANNELS"
                 },
                 17f,
                 cyan
@@ -351,22 +532,29 @@ class LiveTvActivity : Activity() {
 
         root.addView(search)
 
-        val options = listOf(
-            "" to "All categories"
-        ) + categories
+        val options =
+            listOf(
+                "" to "All categories"
+            ) + categories
 
         val spinner = Spinner(this).apply {
             adapter = ArrayAdapter(
                 this@LiveTvActivity,
                 android.R.layout.simple_spinner_dropdown_item,
-                options.map { it.second }
+                options.map {
+                    it.second
+                }
             )
 
-            val index = options.indexOfFirst {
-                it.first == selectedCategory
-            }
+            val index =
+                options.indexOfFirst {
+                    it.first ==
+                        selectedCategory
+                }
 
-            setSelection(index.coerceAtLeast(0))
+            setSelection(
+                index.coerceAtLeast(0)
+            )
         }
 
         root.addView(spinner)
@@ -374,9 +562,11 @@ class LiveTvActivity : Activity() {
         val count = label("", 14f)
         root.addView(count)
 
-        val results = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
+        val results =
+            LinearLayout(this).apply {
+                orientation =
+                    LinearLayout.VERTICAL
+            }
 
         root.addView(results)
 
@@ -386,12 +576,14 @@ class LiveTvActivity : Activity() {
             val source = when (mode) {
                 "recent" ->
                     RecentChannelsStore.list(
-                        this, account
+                        this,
+                        account
                     )
 
                 "favourites" ->
                     FavouritesStore.list(
-                        this, account
+                        this,
+                        account
                     ).filter {
                         it.type == "live"
                     }
@@ -400,17 +592,23 @@ class LiveTvActivity : Activity() {
             }
 
             val filtered = source.filter {
-                (selectedCategory.isBlank() ||
-                    it.categoryId == selectedCategory) &&
-                    (searchQuery.isBlank() ||
-                        it.title.contains(
-                            searchQuery,
-                            ignoreCase = true
-                        ))
+                (
+                    selectedCategory.isBlank() ||
+                    it.categoryId ==
+                        selectedCategory
+                ) &&
+                (
+                    searchQuery.isBlank() ||
+                    it.title.contains(
+                        searchQuery,
+                        ignoreCase = true
+                    )
+                )
             }
 
             count.text =
-                "${filtered.size} channels • ${account.server.name}"
+                "${filtered.size} channels • " +
+                account.server.name
 
             if (filtered.isEmpty()) {
                 results.addView(
@@ -420,40 +618,63 @@ class LiveTvActivity : Activity() {
                 )
             }
 
-            filtered.take(100).forEach { stream ->
-                val row = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(
-                        dp(5), dp(5),
-                        dp(5), dp(5)
-                    )
-                }
+            val visible =
+                filtered.take(100)
 
-                val logo = channelLogo(stream)
+            visible.forEach { stream ->
+                val row =
+                    LinearLayout(this).apply {
+                        orientation =
+                            LinearLayout.HORIZONTAL
+
+                        gravity =
+                            Gravity.CENTER_VERTICAL
+
+                        setPadding(
+                            dp(5),
+                            dp(5),
+                            dp(5),
+                            dp(5)
+                        )
+                    }
 
                 row.addView(
-                    logo,
+                    channelLogo(stream),
                     LinearLayout.LayoutParams(
                         dp(55),
                         dp(55)
                     )
                 )
 
-                val open = button(stream.title) {
-                    play(stream)
-                }.apply {
-                    textSize = 15f
-                    gravity = Gravity.CENTER_VERTICAL
-                    setTextColor(Color.WHITE)
+                val open =
+                    button(stream.title) {
+                        play(
+                            stream,
+                            visible
+                        )
+                    }.apply {
+                        textSize = 15f
 
-                    background =
-                        GradientDrawable().apply {
-                            setColor(panel)
-                            cornerRadius = dp(8).toFloat()
-                            setStroke(dp(1), cyan)
-                        }
-                }
+                        gravity =
+                            Gravity.CENTER_VERTICAL
+
+                        setTextColor(
+                            Color.WHITE
+                        )
+
+                        background =
+                            GradientDrawable().apply {
+                                setColor(panel)
+
+                                cornerRadius =
+                                    dp(8).toFloat()
+
+                                setStroke(
+                                    dp(1),
+                                    cyan
+                                )
+                            }
+                    }
 
                 row.addView(
                     open,
@@ -464,15 +685,23 @@ class LiveTvActivity : Activity() {
                     )
                 )
 
-                val saved = FavouritesStore.contains(
-                    this, account, stream
-                )
+                val saved =
+                    FavouritesStore.contains(
+                        this,
+                        account,
+                        stream
+                    )
 
                 row.addView(
-                    button(if (saved) "★" else "☆") {
+                    button(
+                        if (saved) "★" else "☆"
+                    ) {
                         FavouritesStore.toggle(
-                            this, account, stream
+                            this,
+                            account,
+                            stream
                         )
+
                         render()
                     }
                 )
@@ -483,15 +712,18 @@ class LiveTvActivity : Activity() {
             if (filtered.size > 100) {
                 results.addView(
                     label(
-                        "Showing 100 channels. " +
-                        "Search or select a category to narrow results."
+                        "Showing first 100 channels. " +
+                        "Search or select a category " +
+                        "to narrow results."
                     )
                 )
             }
         }
 
         spinner.onItemSelectedListener =
-            object : AdapterView.OnItemSelectedListener {
+            object :
+                AdapterView.OnItemSelectedListener {
+
                 override fun onNothingSelected(
                     parent: AdapterView<*>?
                 ) = Unit
@@ -504,12 +736,14 @@ class LiveTvActivity : Activity() {
                 ) {
                     selectedCategory =
                         options[position].first
+
                     render()
                 }
             }
 
         search.addTextChangedListener(
             object : TextWatcher {
+
                 override fun beforeTextChanged(
                     s: CharSequence?,
                     start: Int,
@@ -523,7 +757,9 @@ class LiveTvActivity : Activity() {
                     before: Int,
                     count: Int
                 ) {
-                    searchQuery = s.toString()
+                    searchQuery =
+                        s.toString()
+
                     render()
                 }
 
