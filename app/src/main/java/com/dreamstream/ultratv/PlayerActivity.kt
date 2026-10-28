@@ -1,6 +1,7 @@
 package com.dreamstream.ultratv
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
@@ -22,11 +23,19 @@ import androidx.media3.ui.PlayerView
 class PlayerActivity : Activity() {
 
     private var player: ExoPlayer? = null
+
     private lateinit var playerView: PlayerView
     private lateinit var statusText: TextView
     private lateinit var channelBanner: TextView
 
     private val handler = Handler(Looper.getMainLooper())
+
+    private val playbackSettings by lazy {
+        getSharedPreferences(
+            "dreamstream_tv_settings",
+            MODE_PRIVATE
+        )
+    }
 
     private var streamUrl = ""
     private var channelName = ""
@@ -35,9 +44,6 @@ class PlayerActivity : Activity() {
     private var channelUrls = emptyList<String>()
     private var channelNames = emptyList<String>()
 
-    private var bannerGeneration = 0
-    private var playbackGeneration = 0
-
     private val hideBannerRunnable = Runnable {
         channelBanner.visibility = View.GONE
     }
@@ -45,7 +51,10 @@ class PlayerActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        streamUrl = intent.getStringExtra("url").orEmpty()
+        streamUrl = intent.getStringExtra(
+            "url"
+        ).orEmpty()
+
         channelName = intent.getStringExtra(
             "channel_name"
         ).orEmpty()
@@ -59,7 +68,8 @@ class PlayerActivity : Activity() {
         )?.toList() ?: emptyList()
 
         channelIndex = intent.getIntExtra(
-            "channel_index", 0
+            "channel_index",
+            0
         )
 
         if (
@@ -73,6 +83,7 @@ class PlayerActivity : Activity() {
 
             streamUrl = channelUrls[channelIndex]
             channelName = channelNames[channelIndex]
+
         } else {
             channelUrls = emptyList()
             channelNames = emptyList()
@@ -98,10 +109,30 @@ class PlayerActivity : Activity() {
             isFocusableInTouchMode = true
         }
 
+        // LOAD PLAYBACK PREFERENCES
+
+        val controllerTimeout =
+            playbackSettings.getInt(
+                "controller_timeout",
+                5
+            ).coerceIn(3, 10) * 1000
+
+        val autoControls =
+            playbackSettings.getBoolean(
+                "auto_controls",
+                true
+            )
+
+        // CREATE VIDEO PLAYER
+
         playerView = PlayerView(this).apply {
             useController = true
-            controllerShowTimeoutMs = 5000
-            controllerAutoShow = true
+
+            controllerShowTimeoutMs =
+                controllerTimeout
+
+            controllerAutoShow =
+                autoControls
 
             setShowBuffering(
                 PlayerView.SHOW_BUFFERING_ALWAYS
@@ -116,13 +147,23 @@ class PlayerActivity : Activity() {
             )
         )
 
+        // CHANNEL INFORMATION BANNER
+
         channelBanner = TextView(this).apply {
             textSize = 21f
             setTextColor(Color.WHITE)
+
             setBackgroundColor(
                 Color.rgb(18, 37, 68)
             )
-            setPadding(30, 18, 30, 18)
+
+            setPadding(
+                30,
+                18,
+                30,
+                18
+            )
+
             gravity = Gravity.CENTER_VERTICAL
             visibility = View.GONE
         }
@@ -136,13 +177,23 @@ class PlayerActivity : Activity() {
             )
         )
 
+        // STREAM STATUS MESSAGE
+
         statusText = TextView(this).apply {
             textSize = 17f
             setTextColor(Color.WHITE)
+
             setBackgroundColor(
                 Color.rgb(24, 33, 54)
             )
-            setPadding(24, 16, 24, 16)
+
+            setPadding(
+                24,
+                16,
+                24,
+                16
+            )
+
             gravity = Gravity.CENTER
             visibility = View.GONE
         }
@@ -157,7 +208,6 @@ class PlayerActivity : Activity() {
         )
 
         setContentView(container)
-
         container.requestFocus()
     }
 
@@ -167,7 +217,10 @@ class PlayerActivity : Activity() {
     }
 
     private fun initialisePlayer() {
-        if (player != null || streamUrl.isBlank()) {
+        if (
+            player != null ||
+            streamUrl.isBlank()
+        ) {
             return
         }
 
@@ -183,8 +236,11 @@ class PlayerActivity : Activity() {
                     playbackState: Int
                 ) {
                     when (playbackState) {
+
                         Player.STATE_BUFFERING -> {
-                            showStatus("Loading stream...")
+                            showStatus(
+                                "Loading stream..."
+                            )
                         }
 
                         Player.STATE_READY -> {
@@ -216,10 +272,11 @@ class PlayerActivity : Activity() {
     private fun loadStream(url: String) {
         val exo = player ?: return
 
-        playbackGeneration++
         streamUrl = url
 
-        showStatus("Loading stream...")
+        showStatus(
+            "Loading stream..."
+        )
 
         exo.stop()
         exo.clearMediaItems()
@@ -233,8 +290,6 @@ class PlayerActivity : Activity() {
     }
 
     private fun showChannelBanner() {
-        bannerGeneration++
-
         val name = channelName.ifBlank {
             "Live TV"
         }
@@ -247,7 +302,8 @@ class PlayerActivity : Activity() {
                 name
             }
 
-        channelBanner.visibility = View.VISIBLE
+        channelBanner.visibility =
+            View.VISIBLE
 
         handler.removeCallbacks(
             hideBannerRunnable
@@ -272,7 +328,8 @@ class PlayerActivity : Activity() {
                 channelUrls.size
             ) % channelUrls.size
 
-        channelName = channelNames[channelIndex]
+        channelName =
+            channelNames[channelIndex]
 
         loadStream(
             channelUrls[channelIndex]
@@ -280,30 +337,40 @@ class PlayerActivity : Activity() {
 
         showChannelBanner()
 
-        val result = android.content.Intent().apply {
-            putExtra(
-                "last_channel_url",
-                streamUrl
-            )
-        }
-
-        setResult(RESULT_OK, result)
+        setResult(
+            RESULT_OK,
+            Intent().apply {
+                putExtra(
+                    "last_channel_url",
+                    streamUrl
+                )
+            }
+        )
     }
 
     private fun showStatus(message: String) {
         statusText.text = message
-        statusText.visibility = View.VISIBLE
+        statusText.visibility =
+            View.VISIBLE
     }
 
     private fun hideStatus() {
-        statusText.visibility = View.GONE
+        statusText.visibility =
+            View.GONE
     }
+
+    // TV REMOTE CONTROLS
 
     override fun dispatchKeyEvent(
         event: KeyEvent
     ): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN) {
+
+        if (
+            event.action ==
+            KeyEvent.ACTION_DOWN
+        ) {
             when (event.keyCode) {
+
                 KeyEvent.KEYCODE_CHANNEL_UP,
                 KeyEvent.KEYCODE_DPAD_UP -> {
                     if (event.repeatCount == 0) {
@@ -351,6 +418,7 @@ class PlayerActivity : Activity() {
 
                 KeyEvent.KEYCODE_DPAD_CENTER,
                 KeyEvent.KEYCODE_ENTER -> {
+
                     if (
                         playerView.isControllerFullyVisible
                     ) {
@@ -366,11 +434,14 @@ class PlayerActivity : Activity() {
                     val exo = player
 
                     if (
-                        exo?.isCurrentMediaItemSeekable == true
+                        exo?.isCurrentMediaItemSeekable
+                        == true
                     ) {
                         exo.seekTo(
-                            (exo.currentPosition - 10000L)
-                                .coerceAtLeast(0L)
+                            (
+                                exo.currentPosition -
+                                10000L
+                            ).coerceAtLeast(0L)
                         )
                         return true
                     }
@@ -380,12 +451,15 @@ class PlayerActivity : Activity() {
                     val exo = player
 
                     if (
-                        exo?.isCurrentMediaItemSeekable == true
+                        exo?.isCurrentMediaItemSeekable
+                        == true
                     ) {
                         val target =
-                            exo.currentPosition + 10000L
+                            exo.currentPosition +
+                            10000L
 
-                        val duration = exo.duration
+                        val duration =
+                            exo.duration
 
                         exo.seekTo(
                             if (duration > 0L) {
@@ -412,6 +486,7 @@ class PlayerActivity : Activity() {
         )
 
         playerView.player = null
+
         player?.release()
         player = null
 
@@ -419,7 +494,10 @@ class PlayerActivity : Activity() {
     }
 
     override fun onDestroy() {
-        handler.removeCallbacksAndMessages(null)
+        handler.removeCallbacksAndMessages(
+            null
+        )
+
         super.onDestroy()
     }
 }
