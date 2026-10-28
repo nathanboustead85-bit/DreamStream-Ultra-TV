@@ -19,6 +19,14 @@
             android:exported="false" />
 
         <activity
+            android:name=".LiveTvActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".LiveSportsFinderActivity"
             android:exported="false" />
 
@@ -42,5 +50,7 @@
             </intent-filter>
 
         </activity>
+
     </application>
+
 </manifest>
