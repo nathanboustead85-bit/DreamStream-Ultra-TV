@@ -4,9 +4,11 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
+import android.text.Editable
+import android.text.TextWatcher
+import android.util.Xml
 import android.view.ViewGroup
 import android.widget.*
-import android.util.Xml
 import org.xmlpull.v1.XmlPullParser
 import java.io.File
 import java.net.HttpURLConnection
@@ -26,7 +28,7 @@ object SmartEpg {
     private const val CACHE_MS =
         12L * 60L * 60L * 1000L
 
-    private const val MAX_DOWNLOAD =
+    private const val MAX_BYTES =
         20L * 1024L * 1024L
 
     private val countries = listOf(
@@ -36,33 +38,32 @@ object SmartEpg {
         "New Zealand" to "NZ1"
     )
 
+    private val navy = Color.rgb(9, 14, 30)
+    private val cyan = Color.rgb(48, 207, 255)
+
     private data class Programme(
-        val channel: String,
         val start: Long,
         val end: Long,
         val title: String
     )
 
-    private data class Guide(
-        val aliases: Map<String, List<String>>,
-        val programmes: Map<String, List<Programme>>
+    private data class Listing(
+        val country: String,
+        val programmes: List<Programme>
     )
 
-    private fun feedUrl(code: String): String =
-        "${BASE}epg_ripper_${code}.xml.gz"
-
-    private fun cacheFile(
-        activity: Activity,
-        code: String
-    ): File = File(
-        activity.cacheDir,
-        "dreamstream_epg_$code.xml.gz"
+    private data class Result(
+        val listings: Map<String, Listing>,
+        val messages: List<String>
     )
 
     private fun normalise(value: String): String =
         value.lowercase(Locale.ROOT)
             .replace(
-                Regex("\\b(uk|us|ca|nz|hd|fhd|uhd|4k|sd|hevc)\\b"),
+                Regex(
+                    "\\b(uk|us|usa|ca|canada|nz|" +
+                    "hd|fhd|uhd|4k|sd|hevc|h265)\\b"
+                ),
                 " "
             )
             .replace(
@@ -78,23 +79,25 @@ object SmartEpg {
     private fun parseDate(value: String): Long {
         val input = value.trim()
 
-        val formats = listOf(
+        val patterns = listOf(
             "yyyyMMddHHmmss Z",
             "yyyyMMddHHmm Z",
             "yyyyMMddHHmmss",
             "yyyyMMddHHmm"
         )
 
-        for (format in formats) {
+        for (pattern in patterns) {
             try {
-                val date = SimpleDateFormat(
-                    format,
+                val parser = SimpleDateFormat(
+                    pattern,
                     Locale.US
                 ).apply {
                     isLenient = false
                     timeZone =
                         TimeZone.getTimeZone("UTC")
-                }.parse(input)
+                }
+
+                val date = parser.parse(input)
 
                 if (date != null) {
                     return date.time
@@ -112,6 +115,14 @@ object SmartEpg {
             Locale.UK
         ).format(Date(value))
 
+    private fun cacheFile(
+        activity: Activity,
+        code: String
+    ): File = File(
+        activity.cacheDir,
+        "dreamstream_epg_$code.xml.gz"
+    )
+
     private fun download(
         activity: Activity,
         code: String
@@ -124,8 +135,11 @@ object SmartEpg {
             "dreamstream_epg_$code.tmp"
         )
 
+        val url =
+            "${BASE}epg_ripper_${code}.xml.gz"
+
         val connection =
-            URL(feedUrl(code)).openConnection()
+            URL(url).openConnection()
                 as HttpURLConnection
 
         connection.connectTimeout = 15000
@@ -136,7 +150,7 @@ object SmartEpg {
             check(
                 connection.responseCode in 200..299
             ) {
-                "EPG HTTP ${connection.responseCode}"
+                "HTTP ${connection.responseCode}"
             }
 
             connection.inputStream.use { input ->
@@ -152,8 +166,8 @@ object SmartEpg {
 
                         total += count
 
-                        check(total <= MAX_DOWNLOAD) {
-                            "EPG download exceeds 20 MB"
+                        check(total <= MAX_BYTES) {
+                            "Feed exceeds 20 MB"
                         }
 
                         output.write(
@@ -165,16 +179,27 @@ object SmartEpg {
                 }
             }
 
-            check(temporary.length() > 0L) {
-                "Downloaded EPG is empty"
+            check(temporary.length() > 0) {
+                "Empty EPG download"
             }
 
-            // Keep the previous cache if the new
-            // download fails before this point.
-            temporary.copyTo(
-                target,
-                overwrite = true
-            )
+            // Check gzip before replacing cache.
+            GZIPInputStream(
+                temporary.inputStream()
+            ).use { input ->
+                check(input.read() != -1) {
+                    "Invalid or empty gzip feed"
+                }
+            }
+
+            // Preserve the previous cache until
+            // the new file has been downloaded.
+            if (!temporary.renameTo(target)) {
+                temporary.copyTo(
+                    target,
+                    overwrite = true
+                )
+            }
 
             activity.getSharedPreferences(
                 "dreamstream_epg_cache",
@@ -229,17 +254,36 @@ object SmartEpg {
         }
     }
 
-    private fun parse(file: File): Guide {
+    /*
+     * Parse one country at a time.
+     *
+     * Only retain programmes for channels
+     * matching the user's IPTV catalogue.
+     *
+     * This avoids keeping all four complete
+     * XMLTV guides in device memory.
+     */
+    private fun parseCountry(
+        file: File,
+        streams: List<XtreamApi.Stream>,
+        country: String
+    ): Map<String, Listing> {
 
-        val aliases =
-            mutableMapOf<String, MutableList<String>>()
+        val wanted = streams.groupBy {
+            normalise(it.title)
+        }.filterKeys {
+            it.isNotBlank()
+        }
+
+        val channelMatches =
+            mutableMapOf<String, MutableSet<String>>()
 
         val programmes =
             mutableMapOf<String, MutableList<Programme>>()
 
         val now = System.currentTimeMillis()
 
-        val maximum =
+        val limit =
             now + 7L * 24L * 60L * 60L * 1000L
 
         GZIPInputStream(
@@ -257,11 +301,12 @@ object SmartEpg {
 
             var event = parser.eventType
 
-            var channelId = ""
             var inChannel = false
             var inProgramme = false
 
+            var channelId = ""
             var programmeChannel = ""
+
             var start = 0L
             var end = 0L
             var title = ""
@@ -284,23 +329,34 @@ object SmartEpg {
                                     "id"
                                 ).orEmpty()
 
-                            aliases.getOrPut(
-                                channelId
-                            ) {
-                                mutableListOf()
+                            val key =
+                                normalise(channelId)
+
+                            if (wanted.containsKey(key)) {
+                                channelMatches.getOrPut(
+                                    channelId
+                                ) {
+                                    mutableSetOf()
+                                }.add(key)
                             }
                         }
 
                         "display-name" -> {
                             if (inChannel) {
-                                val name = parser.nextText()
+                                val name =
+                                    parser.nextText()
 
-                                if (name.isNotBlank()) {
-                                    aliases.getOrPut(
+                                val key =
+                                    normalise(name)
+
+                                if (
+                                    wanted.containsKey(key)
+                                ) {
+                                    channelMatches.getOrPut(
                                         channelId
                                     ) {
-                                        mutableListOf()
-                                    }.add(name)
+                                        mutableSetOf()
+                                    }.add(key)
                                 }
                             }
                         }
@@ -351,8 +407,11 @@ object SmartEpg {
                         "programme" -> {
                             if (
                                 inProgramme &&
+                                channelMatches.containsKey(
+                                    programmeChannel
+                                ) &&
                                 end > now &&
-                                start < maximum &&
+                                start < limit &&
                                 end > start
                             ) {
                                 programmes.getOrPut(
@@ -361,7 +420,6 @@ object SmartEpg {
                                     mutableListOf()
                                 }.add(
                                     Programme(
-                                        programmeChannel,
                                         start,
                                         end,
                                         title.ifBlank {
@@ -380,40 +438,106 @@ object SmartEpg {
             }
         }
 
-        return Guide(
-            aliases = aliases,
-            programmes = programmes.mapValues {
-                entry ->
-                entry.value.sortedBy {
-                    it.start
+        val candidates =
+            mutableMapOf<String, MutableSet<String>>()
+
+        channelMatches.forEach {
+            (id, keys) ->
+
+            keys.forEach { key ->
+                candidates.getOrPut(key) {
+                    mutableSetOf()
+                }.add(id)
+            }
+        }
+
+        val result =
+            mutableMapOf<String, Listing>()
+
+        wanted.forEach { (key, matchingStreams) ->
+
+            val ids =
+                candidates[key].orEmpty()
+
+            // Do not guess between ambiguous
+            // channels with the same name.
+            if (ids.size == 1) {
+
+                val id = ids.first()
+
+                val entries =
+                    programmes[id].orEmpty()
+                        .sortedBy { it.start }
+
+                if (entries.isNotEmpty()) {
+
+                    matchingStreams.forEach { stream ->
+                        result[stream.id] = Listing(
+                            country,
+                            entries
+                        )
+                    }
                 }
             }
-        )
+        }
+
+        return result
     }
 
-    private fun matchChannel(
-        title: String,
-        guide: Guide
-    ): String? {
+    private fun loadCombined(
+        activity: Activity,
+        streams: List<XtreamApi.Stream>,
+        force: Boolean,
+        progress: (String) -> Unit
+    ): Result {
 
-        val target = normalise(title)
+        val combined =
+            mutableMapOf<String, Listing>()
 
-        if (target.isBlank()) return null
+        val messages =
+            mutableListOf<String>()
 
-        val matches = guide.aliases.filter {
-            (id, names) ->
+        for ((country, code) in countries) {
 
-            normalise(id) == target ||
-                names.any {
-                    normalise(it) == target
+            progress("Loading $country...")
+
+            try {
+                val file = obtain(
+                    activity,
+                    code,
+                    force
+                )
+
+                val listings = parseCountry(
+                    file,
+                    streams,
+                    country
+                )
+
+                // UK is first. Later countries
+                // fill gaps but cannot replace
+                // an earlier successful match.
+                listings.forEach { (id, listing) ->
+                    if (!combined.containsKey(id)) {
+                        combined[id] = listing
+                    }
                 }
+
+                messages.add(
+                    "$country: ${listings.size} matches"
+                )
+
+            } catch (error: Exception) {
+                messages.add(
+                    "$country: unavailable"
+                )
+            }
         }
 
-        return if (matches.size == 1) {
-            matches.keys.first()
-        } else {
-            null
-        }
+        return Result(
+            combined,
+            messages
+        )
     }
 
     fun show(
@@ -425,9 +549,7 @@ object SmartEpg {
             Executors.newSingleThreadExecutor()
 
         val scroll = ScrollView(activity).apply {
-            setBackgroundColor(
-                Color.rgb(9, 14, 30)
-            )
+            setBackgroundColor(navy)
         }
 
         val root = LinearLayout(activity).apply {
@@ -450,14 +572,14 @@ object SmartEpg {
 
         fun button(
             value: String,
-            click: () -> Unit
+            action: () -> Unit
         ): Button =
             Button(activity).apply {
                 text = value
                 isAllCaps = false
                 isFocusable = true
                 setOnClickListener {
-                    click()
+                    action()
                 }
             }
 
@@ -470,211 +592,221 @@ object SmartEpg {
                 "DREAMSTREAM SMART EPG",
                 26f
             ).apply {
-                setTextColor(
-                    Color.rgb(48, 207, 255)
-                )
+                setTextColor(cyan)
             }
         )
 
         root.addView(
             label(
-                "Independent TV guide - UK, USA, Canada and New Zealand",
-                15f
+                "COMBINED GUIDE\n" +
+                "United Kingdom • USA • Canada • New Zealand",
+                16f
             )
         )
-
-        val spinner = Spinner(activity)
-
-        spinner.adapter = ArrayAdapter(
-            activity,
-            android.R.layout.simple_spinner_dropdown_item,
-            countries.map { it.first }
-        )
-
-        val settings = activity.getSharedPreferences(
-            "dreamstream_epg_settings",
-            Activity.MODE_PRIVATE
-        )
-
-        spinner.setSelection(
-            settings.getInt(
-                "country",
-                0
-            ).coerceIn(
-                0,
-                countries.lastIndex
-            )
-        )
-
-        root.addView(spinner)
 
         val status = label(
-            "Select a country and load its guide.",
+            "Press Load Combined Guide to begin.",
             15f
         )
 
         root.addView(status)
 
+        val search = EditText(activity).apply {
+            hint = "Search TV channels"
+            setSingleLine(true)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.LTGRAY)
+        }
+
+        root.addView(search)
+
         val results = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
         }
 
+        var streams =
+            emptyList<XtreamApi.Stream>()
+
+        var combined =
+            emptyMap<String, Listing>()
+
+        var loading = false
+
+        fun render() {
+
+            results.removeAllViews()
+
+            val query =
+                search.text.toString().trim()
+
+            val filtered = streams.filter {
+                query.isBlank() ||
+                    it.title.contains(
+                        query,
+                        ignoreCase = true
+                    )
+            }
+
+            val now =
+                System.currentTimeMillis()
+
+            val displayed =
+                filtered.take(100)
+
+            for (stream in displayed) {
+
+                val listing =
+                    combined[stream.id]
+
+                val entries =
+                    listing?.programmes.orEmpty()
+
+                val current =
+                    entries.firstOrNull {
+                        it.start <= now &&
+                            it.end > now
+                    }
+
+                val next =
+                    entries.firstOrNull {
+                        it.start > now
+                    }
+
+                results.addView(
+                    label(
+                        stream.title,
+                        19f
+                    ).apply {
+                        setTextColor(cyan)
+                    }
+                )
+
+                if (listing != null) {
+                    results.addView(
+                        label(
+                            "EPG: ${listing.country}",
+                            13f
+                        ).apply {
+                            setTextColor(Color.LTGRAY)
+                        }
+                    )
+                }
+
+                results.addView(
+                    label(
+                        if (current != null) {
+                            "NOW  ${clock(current.start)}–" +
+                                "${clock(current.end)}  " +
+                                current.title
+                        } else {
+                            "NOW  No programme information"
+                        },
+                        15f
+                    )
+                )
+
+                results.addView(
+                    label(
+                        if (next != null) {
+                            "NEXT  ${clock(next.start)}  " +
+                                next.title
+                        } else {
+                            "NEXT  No programme information"
+                        },
+                        15f
+                    )
+                )
+
+                results.addView(
+                    button("WATCH CHANNEL") {
+                        val url =
+                            XtreamApi.playbackUrl(
+                                account,
+                                stream
+                            )
+
+                        activity.startActivity(
+                            Intent(
+                                activity,
+                                PlayerActivity::class.java
+                            ).putExtra(
+                                "url",
+                                url
+                            )
+                        )
+                    }
+                )
+            }
+
+            if (filtered.size > 100) {
+                results.addView(
+                    label(
+                        "Showing 100 of ${filtered.size} channels. " +
+                        "Use Search to narrow the list.",
+                        14f
+                    )
+                )
+            }
+        }
+
         fun load(force: Boolean) {
 
-            val index =
-                spinner.selectedItemPosition.coerceIn(
-                    0,
-                    countries.lastIndex
-                )
+            if (loading) return
 
-            val country = countries[index]
-
-            settings.edit()
-                .putInt(
-                    "country",
-                    index
-                )
-                .apply()
+            loading = true
 
             status.text =
-                "Loading ${country.first} guide..."
+                "Retrieving Live TV channels..."
 
             results.removeAllViews()
 
             executor.execute {
                 try {
-                    val file = obtain(
-                        activity,
-                        country.second,
-                        force
-                    )
+                    val loadedStreams =
+                        XtreamApi.streams(
+                            account,
+                            "live"
+                        )
 
-                    val guide = parse(file)
-
-                    val streams = XtreamApi.streams(
-                        account,
-                        "live"
-                    )
-
-                    val now =
-                        System.currentTimeMillis()
+                    val loadedGuide =
+                        loadCombined(
+                            activity,
+                            loadedStreams,
+                            force
+                        ) { message ->
+                            activity.runOnUiThread {
+                                if (dialog.isShowing) {
+                                    status.text = message
+                                }
+                            }
+                        }
 
                     activity.runOnUiThread {
+
+                        loading = false
 
                         if (!dialog.isShowing) {
                             return@runOnUiThread
                         }
 
-                        results.removeAllViews()
-
-                        var matched = 0
-
-                        streams.take(250).forEach {
-                            stream ->
-
-                            val channelId =
-                                matchChannel(
-                                    stream.title,
-                                    guide
-                                )
-
-                            if (channelId != null) {
-                                matched++
-                            }
-
-                            val entries =
-                                guide.programmes[
-                                    channelId
-                                ].orEmpty()
-
-                            val current =
-                                entries.firstOrNull {
-                                    it.start <= now &&
-                                        it.end > now
-                                }
-
-                            val next =
-                                entries.firstOrNull {
-                                    it.start > now
-                                }
-
-                            results.addView(
-                                label(
-                                    stream.title,
-                                    19f
-                                ).apply {
-                                    setTextColor(
-                                        Color.rgb(
-                                            48,
-                                            207,
-                                            255
-                                        )
-                                    )
-                                }
-                            )
-
-                            results.addView(
-                                label(
-                                    if (current != null) {
-                                        "NOW: " +
-                                            current.title +
-                                            " (" +
-                                            clock(current.start) +
-                                            "-" +
-                                            clock(current.end) +
-                                            ")"
-                                    } else {
-                                        "NOW: No programme information"
-                                    },
-                                    15f
-                                )
-                            )
-
-                            results.addView(
-                                label(
-                                    if (next != null) {
-                                        "NEXT: " +
-                                            next.title +
-                                            " (" +
-                                            clock(next.start) +
-                                            ")"
-                                    } else {
-                                        "NEXT: No programme information"
-                                    },
-                                    15f
-                                )
-                            )
-
-                            results.addView(
-                                button("WATCH") {
-
-                                    val url =
-                                        XtreamApi.playbackUrl(
-                                            account,
-                                            stream
-                                        )
-
-                                    activity.startActivity(
-                                        Intent(
-                                            activity,
-                                            PlayerActivity::class.java
-                                        ).putExtra(
-                                            "url",
-                                            url
-                                        )
-                                    )
-                                }
-                            )
-                        }
+                        streams = loadedStreams
+                        combined = loadedGuide.listings
 
                         status.text =
-                            "${country.first}: " +
-                            "$matched matched channels " +
-                            "out of ${streams.take(250).size} shown"
+                            "${combined.size} matched channels " +
+                            "from ${streams.size} IPTV channels.\n" +
+                            loadedGuide.messages.joinToString(
+                                "\n"
+                            )
+
+                        render()
                     }
 
                 } catch (error: Exception) {
                     activity.runOnUiThread {
+
+                        loading = false
+
                         if (dialog.isShowing) {
                             status.text =
                                 error.message
@@ -686,13 +818,13 @@ object SmartEpg {
         }
 
         root.addView(
-            button("LOAD COUNTRY GUIDE") {
+            button("LOAD COMBINED GUIDE") {
                 load(false)
             }
         )
 
         root.addView(
-            button("REFRESH GUIDE") {
+            button("REFRESH ALL FOUR COUNTRIES") {
                 load(true)
             }
         )
@@ -704,6 +836,31 @@ object SmartEpg {
         )
 
         root.addView(results)
+
+        search.addTextChangedListener(
+            object : TextWatcher {
+
+                override fun beforeTextChanged(
+                    s: CharSequence?,
+                    start: Int,
+                    count: Int,
+                    after: Int
+                ) = Unit
+
+                override fun onTextChanged(
+                    s: CharSequence?,
+                    start: Int,
+                    before: Int,
+                    count: Int
+                ) {
+                    render()
+                }
+
+                override fun afterTextChanged(
+                    s: Editable?
+                ) = Unit
+            }
+        )
 
         dialog.setOnDismissListener {
             executor.shutdownNow()
