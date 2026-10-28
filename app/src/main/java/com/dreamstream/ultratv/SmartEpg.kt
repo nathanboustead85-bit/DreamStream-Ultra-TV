@@ -13,6 +13,7 @@ import org.xmlpull.v1.XmlPullParser
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -47,12 +48,29 @@ object SmartEpg {
         val title: String
     )
 
-    private data class Listing(
+    private data class Channel(
+        val code: String,
         val country: String,
-        val programmes: List<Programme>
+        val id: String,
+        val name: String
+    ) {
+        val key: String
+            get() = "$code|$id"
+    }
+
+    private data class Listing(
+        val channel: Channel,
+        val programmes: List<Programme>,
+        val manual: Boolean
+    )
+
+    private data class CountryData(
+        val channels: List<Channel>,
+        val listings: Map<String, Listing>
     )
 
     private data class Result(
+        val channels: List<Channel>,
         val listings: Map<String, Listing>,
         val messages: List<String>
     )
@@ -71,10 +89,56 @@ object SmartEpg {
                 " "
             )
             .trim()
-            .replace(
-                Regex("\\s+"),
-                " "
-            )
+            .replace(Regex("\\s+"), " ")
+
+    private fun hash(value: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") {
+                "%02x".format(it)
+            }
+
+    private fun preferences(activity: Activity) =
+        activity.getSharedPreferences(
+            "dreamstream_manual_epg",
+            Activity.MODE_PRIVATE
+        )
+
+    private fun mappingKey(
+        account: XtreamApi.Account,
+        stream: XtreamApi.Stream
+    ): String = hash(
+        account.server.url + "|" +
+        account.username + "|" +
+        stream.id
+    )
+
+    private fun savedMapping(
+        activity: Activity,
+        account: XtreamApi.Account,
+        stream: XtreamApi.Stream
+    ): String? = preferences(activity).getString(
+        mappingKey(account, stream),
+        null
+    )
+
+    private fun saveMapping(
+        activity: Activity,
+        account: XtreamApi.Account,
+        stream: XtreamApi.Stream,
+        channel: Channel?
+    ) {
+        val editor = preferences(activity).edit()
+        val key = mappingKey(account, stream)
+
+        if (channel == null) {
+            editor.remove(key)
+        } else {
+            editor.putString(key, channel.key)
+        }
+
+        editor.apply()
+    }
 
     private fun parseDate(value: String): Long {
         val input = value.trim()
@@ -88,20 +152,15 @@ object SmartEpg {
 
         for (pattern in patterns) {
             try {
-                val parser = SimpleDateFormat(
+                val date = SimpleDateFormat(
                     pattern,
                     Locale.US
                 ).apply {
                     isLenient = false
-                    timeZone =
-                        TimeZone.getTimeZone("UTC")
-                }
+                    timeZone = TimeZone.getTimeZone("UTC")
+                }.parse(input)
 
-                val date = parser.parse(input)
-
-                if (date != null) {
-                    return date.time
-                }
+                if (date != null) return date.time
             } catch (_: Exception) {
             }
         }
@@ -127,54 +186,40 @@ object SmartEpg {
         activity: Activity,
         code: String
     ): File {
-
         val target = cacheFile(activity, code)
-
         val temporary = File(
             activity.cacheDir,
             "dreamstream_epg_$code.tmp"
         )
 
-        val url =
+        val connection = URL(
             "${BASE}epg_ripper_${code}.xml.gz"
-
-        val connection =
-            URL(url).openConnection()
-                as HttpURLConnection
+        ).openConnection() as HttpURLConnection
 
         connection.connectTimeout = 15000
         connection.readTimeout = 30000
         connection.instanceFollowRedirects = true
 
         try {
-            check(
-                connection.responseCode in 200..299
-            ) {
+            check(connection.responseCode in 200..299) {
                 "HTTP ${connection.responseCode}"
             }
 
             connection.inputStream.use { input ->
                 temporary.outputStream().use { output ->
-
                     val buffer = ByteArray(8192)
                     var total = 0L
 
                     while (true) {
                         val count = input.read(buffer)
-
                         if (count < 0) break
 
                         total += count
-
                         check(total <= MAX_BYTES) {
                             "Feed exceeds 20 MB"
                         }
 
-                        output.write(
-                            buffer,
-                            0,
-                            count
-                        )
+                        output.write(buffer, 0, count)
                     }
                 }
             }
@@ -183,36 +228,27 @@ object SmartEpg {
                 "Empty EPG download"
             }
 
-            // Check gzip before replacing cache.
             GZIPInputStream(
                 temporary.inputStream()
-            ).use { input ->
-                check(input.read() != -1) {
-                    "Invalid or empty gzip feed"
+            ).use {
+                check(it.read() != -1) {
+                    "Invalid gzip feed"
                 }
             }
 
-            // Preserve the previous cache until
-            // the new file has been downloaded.
-            if (!temporary.renameTo(target)) {
-                temporary.copyTo(
-                    target,
-                    overwrite = true
-                )
-            }
+            temporary.copyTo(
+                target,
+                overwrite = true
+            )
 
             activity.getSharedPreferences(
                 "dreamstream_epg_cache",
                 Activity.MODE_PRIVATE
             ).edit()
-                .putLong(
-                    code,
-                    System.currentTimeMillis()
-                )
+                .putLong(code, System.currentTimeMillis())
                 .apply()
 
             return target
-
         } finally {
             connection.disconnect()
             temporary.delete()
@@ -224,7 +260,6 @@ object SmartEpg {
         code: String,
         force: Boolean
     ): File {
-
         val target = cacheFile(activity, code)
 
         val updated = activity.getSharedPreferences(
@@ -232,8 +267,7 @@ object SmartEpg {
             Activity.MODE_PRIVATE
         ).getLong(code, 0L)
 
-        val age =
-            System.currentTimeMillis() - updated
+        val age = System.currentTimeMillis() - updated
 
         if (
             !force &&
@@ -246,43 +280,34 @@ object SmartEpg {
         return try {
             download(activity, code)
         } catch (error: Exception) {
-            if (target.exists()) {
-                target
-            } else {
-                throw error
-            }
+            if (target.exists()) target
+            else throw error
         }
     }
 
-    /*
-     * Parse one country at a time.
-     *
-     * Only retain programmes for channels
-     * matching the user's IPTV catalogue.
-     *
-     * This avoids keeping all four complete
-     * XMLTV guides in device memory.
-     */
     private fun parseCountry(
         file: File,
+        code: String,
+        country: String,
         streams: List<XtreamApi.Stream>,
-        country: String
-    ): Map<String, Listing> {
+        manual: Map<String, String>
+    ): CountryData {
 
         val wanted = streams.groupBy {
             normalise(it.title)
-        }.filterKeys {
-            it.isNotBlank()
-        }
+        }.filterKeys { it.isNotBlank() }
 
-        val channelMatches =
+        val channels = mutableListOf<Channel>()
+        val aliases =
             mutableMapOf<String, MutableSet<String>>()
+
+        val selected =
+            mutableMapOf<String, Channel>()
 
         val programmes =
             mutableMapOf<String, MutableList<Programme>>()
 
         val now = System.currentTimeMillis()
-
         val limit =
             now + 7L * 24L * 60L * 60L * 1000L
 
@@ -291,73 +316,77 @@ object SmartEpg {
         ).buffered().use { input ->
 
             val parser = Xml.newPullParser()
-
-            parser.setFeature(
-                XmlPullParser.FEATURE_PROCESS_NAMESPACES,
-                false
-            )
-
             parser.setInput(input, "UTF-8")
 
             var event = parser.eventType
-
             var inChannel = false
             var inProgramme = false
 
             var channelId = ""
+            var channelName = ""
             var programmeChannel = ""
-
             var start = 0L
             var end = 0L
             var title = ""
 
-            while (
-                event != XmlPullParser.END_DOCUMENT
-            ) {
+            fun finishChannel() {
+                if (channelId.isBlank()) return
 
-                if (
-                    event == XmlPullParser.START_TAG
-                ) {
+                val channel = Channel(
+                    code,
+                    country,
+                    channelId,
+                    channelName.ifBlank { channelId }
+                )
+
+                channels.add(channel)
+
+                val keys = aliases.getOrPut(channelId) {
+                    mutableSetOf()
+                }
+
+                keys.add(normalise(channelId))
+                keys.add(normalise(channel.name))
+
+                val automatic = keys.any {
+                    wanted.containsKey(it)
+                }
+
+                val manualMatch = manual.values.any {
+                    it == channel.key
+                }
+
+                if (automatic || manualMatch) {
+                    selected[channelId] = channel
+                }
+            }
+
+            while (event != XmlPullParser.END_DOCUMENT) {
+
+                if (event == XmlPullParser.START_TAG) {
                     when (parser.name) {
-
                         "channel" -> {
                             inChannel = true
 
                             channelId =
                                 parser.getAttributeValue(
-                                    null,
-                                    "id"
+                                    null, "id"
                                 ).orEmpty()
 
-                            val key =
-                                normalise(channelId)
-
-                            if (wanted.containsKey(key)) {
-                                channelMatches.getOrPut(
-                                    channelId
-                                ) {
-                                    mutableSetOf()
-                                }.add(key)
-                            }
+                            channelName = ""
                         }
 
                         "display-name" -> {
                             if (inChannel) {
-                                val name =
-                                    parser.nextText()
+                                val name = parser.nextText()
 
-                                val key =
-                                    normalise(name)
-
-                                if (
-                                    wanted.containsKey(key)
-                                ) {
-                                    channelMatches.getOrPut(
-                                        channelId
-                                    ) {
-                                        mutableSetOf()
-                                    }.add(key)
+                                if (channelName.isBlank()) {
+                                    channelName = name
                                 }
+
+                                aliases.getOrPut(channelId) {
+                                    mutableSetOf()
+                                }.add(normalise(name))
                             }
                         }
 
@@ -366,21 +395,18 @@ object SmartEpg {
 
                             programmeChannel =
                                 parser.getAttributeValue(
-                                    null,
-                                    "channel"
+                                    null, "channel"
                                 ).orEmpty()
 
                             start = parseDate(
                                 parser.getAttributeValue(
-                                    null,
-                                    "start"
+                                    null, "start"
                                 ).orEmpty()
                             )
 
                             end = parseDate(
                                 parser.getAttributeValue(
-                                    null,
-                                    "stop"
+                                    null, "stop"
                                 ).orEmpty()
                             )
 
@@ -395,19 +421,17 @@ object SmartEpg {
                     }
                 }
 
-                if (
-                    event == XmlPullParser.END_TAG
-                ) {
+                if (event == XmlPullParser.END_TAG) {
                     when (parser.name) {
-
                         "channel" -> {
+                            finishChannel()
                             inChannel = false
                         }
 
                         "programme" -> {
                             if (
                                 inProgramme &&
-                                channelMatches.containsKey(
+                                selected.containsKey(
                                     programmeChannel
                                 ) &&
                                 end > now &&
@@ -441,58 +465,77 @@ object SmartEpg {
         val candidates =
             mutableMapOf<String, MutableSet<String>>()
 
-        channelMatches.forEach {
-            (id, keys) ->
-
+        aliases.forEach { (id, keys) ->
             keys.forEach { key ->
-                candidates.getOrPut(key) {
-                    mutableSetOf()
-                }.add(id)
-            }
-        }
-
-        val result =
-            mutableMapOf<String, Listing>()
-
-        wanted.forEach { (key, matchingStreams) ->
-
-            val ids =
-                candidates[key].orEmpty()
-
-            // Do not guess between ambiguous
-            // channels with the same name.
-            if (ids.size == 1) {
-
-                val id = ids.first()
-
-                val entries =
-                    programmes[id].orEmpty()
-                        .sortedBy { it.start }
-
-                if (entries.isNotEmpty()) {
-
-                    matchingStreams.forEach { stream ->
-                        result[stream.id] = Listing(
-                            country,
-                            entries
-                        )
-                    }
+                if (wanted.containsKey(key)) {
+                    candidates.getOrPut(key) {
+                        mutableSetOf()
+                    }.add(id)
                 }
             }
         }
 
-        return result
+        val listings = mutableMapOf<String, Listing>()
+
+        for (stream in streams) {
+            val manualKey = manual[stream.id]
+
+            val chosen = if (manualKey != null) {
+                selected.values.firstOrNull {
+                    it.key == manualKey
+                }
+            } else {
+                val ids = candidates[
+                    normalise(stream.title)
+                ].orEmpty()
+
+                if (ids.size == 1) {
+                    selected[ids.first()]
+                } else {
+                    null
+                }
+            }
+
+            if (chosen != null) {
+                val entries =
+                    programmes[chosen.id].orEmpty()
+                        .sortedBy { it.start }
+
+                listings[stream.id] = Listing(
+                    chosen,
+                    entries,
+                    manualKey != null
+                )
+            }
+        }
+
+        return CountryData(channels, listings)
     }
 
     private fun loadCombined(
         activity: Activity,
+        account: XtreamApi.Account,
         streams: List<XtreamApi.Stream>,
         force: Boolean,
         progress: (String) -> Unit
     ): Result {
 
+        val manual = streams.mapNotNull { stream ->
+            val value = savedMapping(
+                activity,
+                account,
+                stream
+            )
+
+            if (value == null) null
+            else stream.id to value
+        }.toMap()
+
         val combined =
             mutableMapOf<String, Listing>()
+
+        val allChannels =
+            mutableListOf<Channel>()
 
         val messages =
             mutableListOf<String>()
@@ -502,39 +545,45 @@ object SmartEpg {
             progress("Loading $country...")
 
             try {
-                val file = obtain(
-                    activity,
-                    code,
-                    force
-                )
+                val file = obtain(activity, code, force)
 
-                val listings = parseCountry(
+                val data = parseCountry(
                     file,
+                    code,
+                    country,
                     streams,
-                    country
+                    manual
                 )
 
-                // UK is first. Later countries
-                // fill gaps but cannot replace
-                // an earlier successful match.
-                listings.forEach { (id, listing) ->
-                    if (!combined.containsKey(id)) {
-                        combined[id] = listing
+                allChannels.addAll(data.channels)
+
+                data.listings.forEach { (streamId, listing) ->
+                    val saved = manual[streamId]
+
+                    if (
+                        saved == null &&
+                        !combined.containsKey(streamId)
+                    ) {
+                        combined[streamId] = listing
+                    }
+
+                    if (
+                        saved != null &&
+                        listing.channel.key == saved
+                    ) {
+                        combined[streamId] = listing
                     }
                 }
 
-                messages.add(
-                    "$country: ${listings.size} matches"
-                )
+                messages.add("$country: loaded")
 
-            } catch (error: Exception) {
-                messages.add(
-                    "$country: unavailable"
-                )
+            } catch (_: Exception) {
+                messages.add("$country: unavailable")
             }
         }
 
         return Result(
+            allChannels,
             combined,
             messages
         )
@@ -578,9 +627,7 @@ object SmartEpg {
                 text = value
                 isAllCaps = false
                 isFocusable = true
-                setOnClickListener {
-                    action()
-                }
+                setOnClickListener { action() }
             }
 
         val dialog = AlertDialog.Builder(activity)
@@ -598,21 +645,21 @@ object SmartEpg {
 
         root.addView(
             label(
-                "COMBINED GUIDE\n" +
-                "United Kingdom • USA • Canada • New Zealand",
-                16f
+                "UK • USA • Canada • New Zealand\n" +
+                "Automatic and manual channel matching",
+                15f
             )
         )
 
         val status = label(
-            "Press Load Combined Guide to begin.",
+            "Load the combined guide to begin.",
             15f
         )
 
         root.addView(status)
 
         val search = EditText(activity).apply {
-            hint = "Search TV channels"
+            hint = "Search IPTV channels"
             setSingleLine(true)
             setTextColor(Color.WHITE)
             setHintTextColor(Color.LTGRAY)
@@ -624,16 +671,146 @@ object SmartEpg {
             orientation = LinearLayout.VERTICAL
         }
 
-        var streams =
-            emptyList<XtreamApi.Stream>()
-
-        var combined =
-            emptyMap<String, Listing>()
-
+        var streams = emptyList<XtreamApi.Stream>()
+        var channels = emptyList<Channel>()
+        var listings = emptyMap<String, Listing>()
         var loading = false
 
-        fun render() {
+        // Corrected callback declaration.
+        // Defined before render() and chooseMapping().
+        var reloadAction: () -> Unit = {}
 
+        fun chooseMapping(
+            stream: XtreamApi.Stream,
+            onSaved: () -> Unit
+        ) {
+            if (channels.isEmpty()) {
+                Toast.makeText(
+                    activity,
+                    "Load the guide first",
+                    Toast.LENGTH_SHORT
+                ).show()
+                return
+            }
+
+            val layout = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(18, 12, 18, 12)
+            }
+
+            val input = EditText(activity).apply {
+                hint = "Search EPG channel name"
+                setSingleLine(true)
+            }
+
+            val channelList = ListView(activity)
+
+            layout.addView(input)
+
+            layout.addView(
+                channelList,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    420
+                )
+            )
+
+            val picker = AlertDialog.Builder(activity)
+                .setTitle("Match: ${stream.title}")
+                .setView(layout)
+                .setNegativeButton("CANCEL", null)
+                .setNeutralButton(
+                    "RESET TO AUTOMATIC"
+                ) { _, _ ->
+                    saveMapping(
+                        activity,
+                        account,
+                        stream,
+                        null
+                    )
+
+                    onSaved()
+                }
+                .create()
+
+            var shown = emptyList<Channel>()
+
+            fun updateChoices() {
+                val query =
+                    input.text.toString().trim()
+
+                shown = channels.filter {
+                    query.isBlank() ||
+                        it.name.contains(
+                            query,
+                            ignoreCase = true
+                        ) ||
+                        it.id.contains(
+                            query,
+                            ignoreCase = true
+                        ) ||
+                        it.country.contains(
+                            query,
+                            ignoreCase = true
+                        )
+                }.take(200)
+
+                channelList.adapter = ArrayAdapter(
+                    activity,
+                    android.R.layout.simple_list_item_1,
+                    shown.map {
+                        "${it.name} (${it.country})"
+                    }
+                )
+            }
+
+            channelList.setOnItemClickListener {
+                _, _, position, _ ->
+
+                val chosen = shown.getOrNull(position)
+                    ?: return@setOnItemClickListener
+
+                saveMapping(
+                    activity,
+                    account,
+                    stream,
+                    chosen
+                )
+
+                picker.dismiss()
+                onSaved()
+            }
+
+            input.addTextChangedListener(
+                object : TextWatcher {
+
+                    override fun beforeTextChanged(
+                        s: CharSequence?,
+                        start: Int,
+                        count: Int,
+                        after: Int
+                    ) = Unit
+
+                    override fun onTextChanged(
+                        s: CharSequence?,
+                        start: Int,
+                        before: Int,
+                        count: Int
+                    ) {
+                        updateChoices()
+                    }
+
+                    override fun afterTextChanged(
+                        s: Editable?
+                    ) = Unit
+                }
+            )
+
+            updateChoices()
+            picker.show()
+        }
+
+        fun render() {
             results.removeAllViews()
 
             val query =
@@ -647,55 +824,52 @@ object SmartEpg {
                     )
             }
 
-            val now =
-                System.currentTimeMillis()
+            val now = System.currentTimeMillis()
 
-            val displayed =
-                filtered.take(100)
-
-            for (stream in displayed) {
-
-                val listing =
-                    combined[stream.id]
-
+            for (stream in filtered.take(100)) {
+                val listing = listings[stream.id]
                 val entries =
                     listing?.programmes.orEmpty()
 
-                val current =
-                    entries.firstOrNull {
-                        it.start <= now &&
-                            it.end > now
-                    }
+                val current = entries.firstOrNull {
+                    it.start <= now &&
+                        it.end > now
+                }
 
-                val next =
-                    entries.firstOrNull {
-                        it.start > now
-                    }
+                val next = entries.firstOrNull {
+                    it.start > now
+                }
 
                 results.addView(
-                    label(
-                        stream.title,
-                        19f
-                    ).apply {
+                    label(stream.title, 19f).apply {
                         setTextColor(cyan)
                     }
                 )
 
-                if (listing != null) {
-                    results.addView(
-                        label(
-                            "EPG: ${listing.country}",
-                            13f
-                        ).apply {
-                            setTextColor(Color.LTGRAY)
-                        }
+                results.addView(
+                    label(
+                        when {
+                            listing == null ->
+                                "EPG: Not matched"
+
+                            listing.manual ->
+                                "EPG: Manual • " +
+                                listing.channel.name +
+                                " (${listing.channel.country})"
+
+                            else ->
+                                "EPG: Automatic • " +
+                                listing.channel.name +
+                                " (${listing.channel.country})"
+                        },
+                        13f
                     )
-                }
+                )
 
                 results.addView(
                     label(
                         if (current != null) {
-                            "NOW  ${clock(current.start)}–" +
+                            "NOW  ${clock(current.start)}-" +
                                 "${clock(current.end)}  " +
                                 current.title
                         } else {
@@ -718,7 +892,7 @@ object SmartEpg {
                 )
 
                 results.addView(
-                    button("WATCH CHANNEL") {
+                    button("WATCH") {
                         val url =
                             XtreamApi.playbackUrl(
                                 account,
@@ -736,13 +910,22 @@ object SmartEpg {
                         )
                     }
                 )
+
+                // Corrected: invokes reloadAction.
+                results.addView(
+                    button("MATCH EPG CHANNEL") {
+                        chooseMapping(stream) {
+                            reloadAction()
+                        }
+                    }
+                )
             }
 
             if (filtered.size > 100) {
                 results.addView(
                     label(
-                        "Showing 100 of ${filtered.size} channels. " +
-                        "Use Search to narrow the list.",
+                        "Showing 100 of ${filtered.size}. " +
+                        "Search to narrow results.",
                         14f
                     )
                 )
@@ -750,14 +933,10 @@ object SmartEpg {
         }
 
         fun load(force: Boolean) {
-
             if (loading) return
 
             loading = true
-
-            status.text =
-                "Retrieving Live TV channels..."
-
+            status.text = "Loading IPTV channels..."
             results.removeAllViews()
 
             executor.execute {
@@ -768,21 +947,20 @@ object SmartEpg {
                             "live"
                         )
 
-                    val loadedGuide =
-                        loadCombined(
-                            activity,
-                            loadedStreams,
-                            force
-                        ) { message ->
-                            activity.runOnUiThread {
-                                if (dialog.isShowing) {
-                                    status.text = message
-                                }
+                    val guide = loadCombined(
+                        activity,
+                        account,
+                        loadedStreams,
+                        force
+                    ) { message ->
+                        activity.runOnUiThread {
+                            if (dialog.isShowing) {
+                                status.text = message
                             }
                         }
+                    }
 
                     activity.runOnUiThread {
-
                         loading = false
 
                         if (!dialog.isShowing) {
@@ -790,21 +968,19 @@ object SmartEpg {
                         }
 
                         streams = loadedStreams
-                        combined = loadedGuide.listings
+                        channels = guide.channels
+                        listings = guide.listings
 
                         status.text =
-                            "${combined.size} matched channels " +
-                            "from ${streams.size} IPTV channels.\n" +
-                            loadedGuide.messages.joinToString(
-                                "\n"
-                            )
+                            "${listings.size} matched of " +
+                            "${streams.size} channels\n" +
+                            guide.messages.joinToString("\n")
 
                         render()
                     }
 
                 } catch (error: Exception) {
                     activity.runOnUiThread {
-
                         loading = false
 
                         if (dialog.isShowing) {
@@ -815,6 +991,11 @@ object SmartEpg {
                     }
                 }
             }
+        }
+
+        // Corrected: callback now points to load().
+        reloadAction = {
+            load(false)
         }
 
         root.addView(
