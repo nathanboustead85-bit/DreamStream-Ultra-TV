@@ -63,7 +63,7 @@ class MainActivity : Activity() {
         setContentView(scroll)
         root.addView(
             label(title, 30f).apply {
-                setTextColor(accent)
+                setTextColor(this@MainActivity.accent)
             }
         )
     }
