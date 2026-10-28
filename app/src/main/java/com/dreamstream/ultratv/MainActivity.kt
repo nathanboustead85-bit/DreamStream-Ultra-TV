@@ -11,20 +11,28 @@ import android.widget.*
 import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
+
     private val background = Color.rgb(9, 14, 30)
     private val accent = Color.rgb(48, 207, 255)
+
     private val executor = Executors.newSingleThreadExecutor()
+
     private val prefs by lazy {
         getSharedPreferences("tv_login", MODE_PRIVATE)
     }
 
     private lateinit var root: LinearLayout
+
     private var autoLoginAttempted = false
     private var account: XtreamApi.Account? = null
     private var categoryFilter = ""
     private var currentType = "live"
-    private var allStreams = emptyList<XtreamApi.Stream>()
-    private var categories = emptyList<Pair<String, String>>()
+
+    private var allStreams =
+        emptyList<XtreamApi.Stream>()
+
+    private var categories =
+        emptyList<Pair<String, String>>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,24 +60,36 @@ class MainActivity : Activity() {
     }
 
     private fun screen(title: String) {
+
         val scroll = ScrollView(this).apply {
-            setBackgroundColor(background)
+            setBackgroundColor(
+                this@MainActivity.background
+            )
         }
+
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(32, 24, 32, 24)
         }
+
         scroll.addView(root)
         setContentView(scroll)
+
         root.addView(
             label(title, 30f).apply {
-                setTextColor(this@MainActivity.accent)
+                setTextColor(
+                    this@MainActivity.accent
+                )
             }
         )
     }
 
-    private fun work(message: String, task: () -> Unit) {
+    private fun work(
+        message: String,
+        task: () -> Unit
+    ) {
         root.addView(label(message, 16f))
+
         executor.execute {
             try {
                 task()
@@ -80,6 +100,7 @@ class MainActivity : Activity() {
                         e.message ?: "Network error",
                         Toast.LENGTH_LONG
                     ).show()
+
                     showHomeOrLogin()
                 }
             }
@@ -87,42 +108,63 @@ class MainActivity : Activity() {
     }
 
     private fun showHomeOrLogin() {
-        if (account == null) showLogin()
-        else showHome()
+        if (account == null) {
+            showLogin()
+        } else {
+            showHome()
+        }
     }
 
     private fun showLogin() {
+
         screen("DREAMSTREAM ULTRA TV")
+
         root.addView(
-            label("Sign in to your authorised IPTV provider")
+            label(
+                "Sign in to your authorised IPTV provider"
+            )
         )
 
         val rememberUsername =
             prefs.getBoolean("remember", false)
+
         val rememberPassword =
-            prefs.getBoolean("remember_password", false)
+            prefs.getBoolean(
+                "remember_password",
+                false
+            )
+
         val autoLogin =
             prefs.getBoolean("auto_login", false)
 
         val savedPassword =
             if (rememberPassword) {
                 SecurePasswordStore.read(this)
-            } else null
+            } else {
+                null
+            }
 
         val spinner = Spinner(this)
+
         spinner.adapter = ArrayAdapter(
             this,
             android.R.layout.simple_spinner_dropdown_item,
             XtreamApi.servers.map { it.name }
         )
+
         spinner.setSelection(
-            (if (rememberUsername) {
-                prefs.getInt("server", 0)
-            } else 0).coerceIn(
+            (
+                if (rememberUsername) {
+                    prefs.getInt("server", 0)
+                } else {
+                    0
+                }
+            ).coerceIn(
                 0,
                 XtreamApi.servers.lastIndex
             )
         )
+
         root.addView(spinner)
 
         val user = EditText(this).apply {
@@ -130,19 +172,25 @@ class MainActivity : Activity() {
             setSingleLine(true)
             setTextColor(Color.WHITE)
             setHintTextColor(Color.LTGRAY)
+
             if (rememberUsername) {
-                setText(prefs.getString("username", ""))
+                setText(
+                    prefs.getString("username", "")
+                )
             }
         }
 
         val pass = EditText(this).apply {
             hint = "Password"
             setSingleLine(true)
+
             inputType =
                 android.text.InputType.TYPE_CLASS_TEXT or
                 android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+
             setTextColor(Color.WHITE)
             setHintTextColor(Color.LTGRAY)
+
             if (savedPassword != null) {
                 setText(savedPassword)
             }
@@ -155,15 +203,22 @@ class MainActivity : Activity() {
         }
 
         val rememberPassBox = CheckBox(this).apply {
-            text = "Remember Password (encrypted on this device)"
+            text =
+                "Remember Password (encrypted on this device)"
+
             setTextColor(Color.WHITE)
+
             isChecked =
-                rememberPassword && savedPassword != null
+                rememberPassword &&
+                savedPassword != null
         }
 
         val autoLoginBox = CheckBox(this).apply {
-            text = "Auto Login when DreamStream starts"
+            text =
+                "Auto Login when DreamStream starts"
+
             setTextColor(Color.WHITE)
+
             isChecked =
                 autoLogin &&
                 rememberUserBox.isChecked &&
@@ -172,16 +227,23 @@ class MainActivity : Activity() {
 
         rememberUserBox.setOnCheckedChangeListener {
             _, checked ->
-            if (!checked) autoLoginBox.isChecked = false
+
+            if (!checked) {
+                autoLoginBox.isChecked = false
+            }
         }
 
         rememberPassBox.setOnCheckedChangeListener {
             _, checked ->
-            if (!checked) autoLoginBox.isChecked = false
+
+            if (!checked) {
+                autoLoginBox.isChecked = false
+            }
         }
 
         autoLoginBox.setOnCheckedChangeListener {
             _, checked ->
+
             if (checked) {
                 rememberUserBox.isChecked = true
                 rememberPassBox.isChecked = true
@@ -195,49 +257,73 @@ class MainActivity : Activity() {
         root.addView(autoLoginBox)
 
         fun connect() {
-            val username = user.text.toString().trim()
-            val password = pass.text.toString()
 
-            if (username.isBlank() || password.isBlank()) {
+            val username =
+                user.text.toString().trim()
+
+            val password =
+                pass.text.toString()
+
+            if (
+                username.isBlank() ||
+                password.isBlank()
+            ) {
                 Toast.makeText(
                     this,
                     "Enter username and password",
                     Toast.LENGTH_SHORT
                 ).show()
+
                 return
             }
 
-            val serverIndex = spinner.selectedItemPosition
-            val selectedAccount = XtreamApi.Account(
-                XtreamApi.servers[serverIndex],
-                username,
-                password
-            )
+            val serverIndex =
+                spinner.selectedItemPosition
+
+            val selectedAccount =
+                XtreamApi.Account(
+                    XtreamApi.servers[serverIndex],
+                    username,
+                    password
+                )
 
             work("Connecting...") {
-                XtreamApi.authenticate(selectedAccount)
+
+                XtreamApi.authenticate(
+                    selectedAccount
+                )
 
                 runOnUiThread {
-                    val saveUser = rememberUserBox.isChecked
-                    val savePass = rememberPassBox.isChecked
+
+                    val saveUser =
+                        rememberUserBox.isChecked
+
+                    val savePass =
+                        rememberPassBox.isChecked
+
                     val saveAuto =
                         autoLoginBox.isChecked &&
-                        saveUser && savePass
+                        saveUser &&
+                        savePass
 
                     if (savePass) {
+
                         try {
                             SecurePasswordStore.save(
                                 this,
                                 password
                             )
                         } catch (e: Exception) {
+
                             Toast.makeText(
                                 this,
                                 "Password could not be saved securely",
                                 Toast.LENGTH_LONG
                             ).show()
+
                             SecurePasswordStore.clear(this)
                         }
+
                     } else {
                         SecurePasswordStore.clear(this)
                     }
@@ -247,14 +333,25 @@ class MainActivity : Activity() {
                         SecurePasswordStore.read(this) != null
 
                     prefs.edit()
-                        .putBoolean("remember", saveUser)
+                        .putBoolean(
+                            "remember",
+                            saveUser
+                        )
                         .putInt(
                             "server",
-                            if (saveUser) serverIndex else 0
+                            if (saveUser) {
+                                serverIndex
+                            } else {
+                                0
+                            }
                         )
                         .putString(
                             "username",
-                            if (saveUser) username else ""
+                            if (saveUser) {
+                                username
+                            } else {
+                                ""
+                            }
                         )
                         .putBoolean(
                             "remember_password",
@@ -267,6 +364,7 @@ class MainActivity : Activity() {
                         .apply()
 
                     account = selectedAccount
+
                     showHome()
                 }
             }
@@ -279,6 +377,7 @@ class MainActivity : Activity() {
         )
 
         if (!autoLoginAttempted) {
+
             autoLoginAttempted = true
 
             if (
@@ -292,73 +391,112 @@ class MainActivity : Activity() {
     }
 
     private fun showHome() {
+
         screen("DREAMSTREAM ULTRA TV")
+
         root.addView(
-            label("Connected: ${account?.server?.name}")
+            label(
+                "Connected: ${account?.server?.name}"
+            )
         )
 
-        root.addView(button("LIVE TV") {
-            load("live")
-        })
-        root.addView(button("MOVIES") {
-            load("movie")
-        })
-        root.addView(button("SERIES") {
-            load("series")
-        })
+        root.addView(
+            button("LIVE TV") {
+                load("live")
+            }
+        )
 
-        root.addView(button("SPORTS NEWS") {
-            startActivity(
-                Intent(
-                    this,
-                    SportsNewsActivity::class.java
+        root.addView(
+            button("MOVIES") {
+                load("movie")
+            }
+        )
+
+        root.addView(
+            button("SERIES") {
+                load("series")
+            }
+        )
+
+        root.addView(
+            button("SPORTS NEWS") {
+                startActivity(
+                    Intent(
+                        this,
+                        SportsNewsActivity::class.java
+                    )
                 )
-            )
-        })
+            }
+        )
 
-        root.addView(button("LIVE SPORTS FINDER") {
-            startActivity(
-                Intent(
-                    this,
-                    LiveSportsFinderActivity::class.java
+        root.addView(
+            button("LIVE SPORTS FINDER") {
+                startActivity(
+                    Intent(
+                        this,
+                        LiveSportsFinderActivity::class.java
+                    )
                 )
-            )
-        })
+            }
+        )
 
-        root.addView(button("Log out") {
-            account = null
-            prefs.edit()
-                .putBoolean("auto_login", false)
-                .apply()
-            showLogin()
-        })
+        root.addView(
+            button("Log out") {
+                account = null
+
+                prefs.edit()
+                    .putBoolean(
+                        "auto_login",
+                        false
+                    )
+                    .apply()
+
+                showLogin()
+            }
+        )
     }
 
     private fun load(type: String) {
-        val selectedAccount = account ?: run {
-            showLogin()
-            return
-        }
+
+        val selectedAccount =
+            account ?: run {
+                showLogin()
+                return
+            }
 
         currentType = type
-        screen("Loading ${type.uppercase()}...")
+
+        screen(
+            "Loading ${type.uppercase()}..."
+        )
 
         work("Fetching categories and channels") {
+
             val loadedCategories =
-                XtreamApi.categories(selectedAccount, type)
+                XtreamApi.categories(
+                    selectedAccount,
+                    type
+                )
+
             val loadedStreams =
-                XtreamApi.streams(selectedAccount, type)
+                XtreamApi.streams(
+                    selectedAccount,
+                    type
+                )
 
             runOnUiThread {
+
                 categories = loadedCategories
                 allStreams = loadedStreams
                 categoryFilter = ""
+
                 showLibrary()
             }
         }
     }
 
     private fun showLibrary() {
+
         screen(
             "${currentType.uppercase()} / ${account?.server?.name}"
         )
@@ -375,45 +513,64 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE)
             setHintTextColor(Color.LTGRAY)
         }
+
         root.addView(filter)
 
         val categorySpinner = Spinner(this)
+
         val options =
-            listOf("" to "All categories") + categories
+            listOf("" to "All categories") +
+            categories
 
         categorySpinner.adapter = ArrayAdapter(
             this,
             android.R.layout.simple_spinner_dropdown_item,
             options.map { it.second }
         )
+
         root.addView(categorySpinner)
 
         val results = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
+
         root.addView(results)
 
         fun refresh() {
-            results.removeAllViews()
-            val query = filter.text.toString().trim()
 
-            val matching = allStreams.filter {
-                (categoryFilter.isEmpty() ||
-                    it.categoryId == categoryFilter) &&
-                (query.isEmpty() ||
-                    it.title.contains(
-                        query,
-                        ignoreCase = true
-                    ))
-            }
+            results.removeAllViews()
+
+            val query =
+                filter.text.toString().trim()
+
+            val matching =
+                allStreams.filter {
+
+                    (
+                        categoryFilter.isEmpty() ||
+                        it.categoryId == categoryFilter
+                    ) &&
+                    (
+                        query.isEmpty() ||
+                        it.title.contains(
+                            query,
+                            ignoreCase = true
+                        )
+                    )
+                }
 
             results.addView(
-                label("${matching.size} results", 16f)
+                label(
+                    "${matching.size} results",
+                    16f
+                )
             )
 
             matching.take(250).forEach { stream ->
+
                 results.addView(
                     button(stream.title) {
+
                         if (stream.type == "series") {
                             showEpisodes(stream)
                         } else {
@@ -424,6 +581,7 @@ class MainActivity : Activity() {
             }
 
             if (matching.size > 250) {
+
                 results.addView(
                     label(
                         "Showing first 250 results. Use search to narrow down.",
@@ -435,6 +593,7 @@ class MainActivity : Activity() {
 
         categorySpinner.onItemSelectedListener =
             object : AdapterView.OnItemSelectedListener {
+
                 override fun onNothingSelected(
                     parent: AdapterView<*>?
                 ) = Unit
@@ -445,13 +604,17 @@ class MainActivity : Activity() {
                     position: Int,
                     id: Long
                 ) {
-                    categoryFilter = options[position].first
+
+                    categoryFilter =
+                        options[position].first
+
                     refresh()
                 }
             }
 
         filter.addTextChangedListener(
             object : TextWatcher {
+
                 override fun beforeTextChanged(
                     s: CharSequence?,
                     start: Int,
@@ -480,9 +643,13 @@ class MainActivity : Activity() {
     private fun showEpisodes(
         series: XtreamApi.Stream
     ) {
-        val selectedAccount = account ?: return
 
-        screen("EPISODES / ${series.title}")
+        val selectedAccount =
+            account ?: return
+
+        screen(
+            "EPISODES / ${series.title}"
+        )
 
         root.addView(
             button("Back to series") {
@@ -491,19 +658,26 @@ class MainActivity : Activity() {
         )
 
         work("Loading episodes...") {
-            val episodes = XtreamApi.seriesEpisodes(
-                selectedAccount,
-                series.id
-            )
+
+            val episodes =
+                XtreamApi.seriesEpisodes(
+                    selectedAccount,
+                    series.id
+                )
 
             runOnUiThread {
+
                 if (episodes.isEmpty()) {
+
                     root.addView(
-                        label("No episodes available")
+                        label(
+                            "No episodes available"
+                        )
                     )
                 }
 
                 episodes.forEach { episode ->
+
                     root.addView(
                         button(episode.title) {
                             play(episode)
@@ -514,18 +688,27 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun play(stream: XtreamApi.Stream) {
-        val selectedAccount = account ?: return
-        val url = XtreamApi.playbackUrl(
-            selectedAccount,
-            stream
-        )
+    private fun play(
+        stream: XtreamApi.Stream
+    ) {
+
+        val selectedAccount =
+            account ?: return
+
+        val url =
+            XtreamApi.playbackUrl(
+                selectedAccount,
+                stream
+            )
 
         startActivity(
             Intent(
                 this,
                 PlayerActivity::class.java
-            ).putExtra("url", url)
+            ).putExtra(
+                "url",
+                url
+            )
         )
     }
 
