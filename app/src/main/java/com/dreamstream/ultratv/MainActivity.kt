@@ -21,10 +21,7 @@ class MainActivity : Activity() {
         Executors.newSingleThreadExecutor()
 
     private val prefs by lazy {
-        getSharedPreferences(
-            "tv_login",
-            MODE_PRIVATE
-        )
+        getSharedPreferences("tv_login", MODE_PRIVATE)
     }
 
     private lateinit var root: LinearLayout
@@ -66,7 +63,6 @@ class MainActivity : Activity() {
     }
 
     private fun screen(title: String) {
-
         val scroll = ScrollView(this).apply {
             setBackgroundColor(navy)
             isFillViewport = true
@@ -83,26 +79,20 @@ class MainActivity : Activity() {
         root.addView(
             text(title, 29f).apply {
                 setTextColor(cyan)
-                setTypeface(
-                    null,
-                    Typeface.BOLD
-                )
+                setTypeface(null, Typeface.BOLD)
             }
         )
     }
 
     private fun runNetwork(task: () -> Unit) {
-
         executor.execute {
             try {
                 task()
             } catch (error: Exception) {
-
                 runOnUiThread {
                     Toast.makeText(
                         this,
-                        error.message
-                            ?: "Connection failed",
+                        error.message ?: "Connection failed",
                         Toast.LENGTH_LONG
                     ).show()
 
@@ -117,26 +107,19 @@ class MainActivity : Activity() {
     }
 
     private fun showLogin() {
-
         screen("DREAMSTREAM ULTRA TV")
 
         root.addView(
-            text(
-                "Sign in to your authorised IPTV provider"
-            )
+            text("Sign in to your authorised IPTV provider")
         )
 
-        val remember =
-            prefs.getBoolean(
-                "remember",
-                false
-            )
+        val remember = prefs.getBoolean(
+            "remember", false
+        )
 
-        val rememberPassword =
-            prefs.getBoolean(
-                "remember_password",
-                false
-            )
+        val rememberPassword = prefs.getBoolean(
+            "remember_password", false
+        )
 
         val savedPassword =
             if (rememberPassword) {
@@ -146,22 +129,16 @@ class MainActivity : Activity() {
             }
 
         val server = Spinner(this).apply {
-
             adapter = ArrayAdapter(
                 this@MainActivity,
                 android.R.layout.simple_spinner_dropdown_item,
-                XtreamApi.servers.map {
-                    it.name
-                }
+                XtreamApi.servers.map { it.name }
             )
 
             setSelection(
                 (
                     if (remember) {
-                        prefs.getInt(
-                            "server",
-                            0
-                        )
+                        prefs.getInt("server", 0)
                     } else {
                         0
                     }
@@ -180,16 +157,12 @@ class MainActivity : Activity() {
 
             if (remember) {
                 setText(
-                    prefs.getString(
-                        "username",
-                        ""
-                    )
+                    prefs.getString("username", "")
                 )
             }
         }
 
         val password = EditText(this).apply {
-
             hint = "Password"
             setSingleLine(true)
 
@@ -205,45 +178,31 @@ class MainActivity : Activity() {
             }
         }
 
-        val rememberUserBox =
-            CheckBox(this).apply {
-                text =
-                    "Remember Username and Server"
+        val rememberUserBox = CheckBox(this).apply {
+            text = "Remember Username and Server"
+            setTextColor(Color.WHITE)
+            isChecked = remember
+        }
 
-                setTextColor(Color.WHITE)
-                isChecked = remember
-            }
-
-        val rememberPassBox =
-            CheckBox(this).apply {
-                text =
-                    "Remember Password (encrypted on this device)"
-
-                setTextColor(Color.WHITE)
-
-                isChecked =
-                    rememberPassword &&
-                    savedPassword != null
-            }
+        val rememberPassBox = CheckBox(this).apply {
+            text = "Remember Password (encrypted on this device)"
+            setTextColor(Color.WHITE)
+            isChecked =
+                rememberPassword && savedPassword != null
+        }
 
         val autoBox = CheckBox(this).apply {
-            text =
-                "Auto Login when DreamStream starts"
-
+            text = "Auto Login when DreamStream starts"
             setTextColor(Color.WHITE)
 
             isChecked =
-                prefs.getBoolean(
-                    "auto_login",
-                    false
-                ) &&
+                prefs.getBoolean("auto_login", false) &&
                 rememberUserBox.isChecked &&
                 rememberPassBox.isChecked
         }
 
         rememberUserBox.setOnCheckedChangeListener {
             _, checked ->
-
             if (!checked) {
                 autoBox.isChecked = false
             }
@@ -251,7 +210,6 @@ class MainActivity : Activity() {
 
         rememberPassBox.setOnCheckedChangeListener {
             _, checked ->
-
             if (!checked) {
                 autoBox.isChecked = false
             }
@@ -259,7 +217,6 @@ class MainActivity : Activity() {
 
         autoBox.setOnCheckedChangeListener {
             _, checked ->
-
             if (checked) {
                 rememberUserBox.isChecked = true
                 rememberPassBox.isChecked = true
@@ -276,39 +233,29 @@ class MainActivity : Activity() {
         var connecting = false
 
         fun connect() {
-
             if (connecting) return
 
-            val user =
-                username.text.toString().trim()
+            val user = username.text.toString().trim()
+            val pass = password.text.toString()
 
-            val pass =
-                password.text.toString()
-
-            if (
-                user.isBlank() ||
-                pass.isBlank()
-            ) {
+            if (user.isBlank() || pass.isBlank()) {
                 Toast.makeText(
                     this,
                     "Enter username and password",
                     Toast.LENGTH_SHORT
                 ).show()
-
                 return
             }
 
             connecting = true
 
-            val index =
-                server.selectedItemPosition
+            val index = server.selectedItemPosition
 
-            val selected =
-                XtreamApi.Account(
-                    XtreamApi.servers[index],
-                    user,
-                    pass
-                )
+            val selected = XtreamApi.Account(
+                XtreamApi.servers[index],
+                user,
+                pass
+            )
 
             root.addView(
                 text("Connecting...", 16f)
@@ -316,13 +263,9 @@ class MainActivity : Activity() {
 
             executor.execute {
                 try {
-
-                    XtreamApi.authenticate(
-                        selected
-                    )
+                    XtreamApi.authenticate(selected)
 
                     runOnUiThread {
-
                         val saveUser =
                             rememberUserBox.isChecked
 
@@ -333,22 +276,15 @@ class MainActivity : Activity() {
 
                         if (savePass) {
                             try {
-
                                 SecurePasswordStore.save(
-                                    this,
-                                    pass
+                                    this, pass
                                 )
 
                                 passwordStored =
-                                    SecurePasswordStore.read(
-                                        this
-                                    ) == pass
+                                    SecurePasswordStore.read(this) == pass
 
                             } catch (_: Exception) {
-
-                                SecurePasswordStore.clear(
-                                    this
-                                )
+                                SecurePasswordStore.clear(this)
 
                                 Toast.makeText(
                                     this,
@@ -357,9 +293,7 @@ class MainActivity : Activity() {
                                 ).show()
                             }
                         } else {
-                            SecurePasswordStore.clear(
-                                this
-                            )
+                            SecurePasswordStore.clear(this)
                         }
 
                         prefs.edit()
@@ -369,19 +303,11 @@ class MainActivity : Activity() {
                             )
                             .putInt(
                                 "server",
-                                if (saveUser) {
-                                    index
-                                } else {
-                                    0
-                                }
+                                if (saveUser) index else 0
                             )
                             .putString(
                                 "username",
-                                if (saveUser) {
-                                    user
-                                } else {
-                                    ""
-                                }
+                                if (saveUser) user else ""
                             )
                             .putBoolean(
                                 "remember_password",
@@ -400,14 +326,12 @@ class MainActivity : Activity() {
                     }
 
                 } catch (error: Exception) {
-
                     runOnUiThread {
                         connecting = false
 
                         Toast.makeText(
                             this,
-                            error.message
-                                ?: "Login failed",
+                            error.message ?: "Login failed",
                             Toast.LENGTH_LONG
                         ).show()
 
@@ -424,7 +348,6 @@ class MainActivity : Activity() {
         )
 
         if (!autoLoginAttempted) {
-
             autoLoginAttempted = true
 
             if (
@@ -444,108 +367,59 @@ class MainActivity : Activity() {
     ): View {
 
         val card = LinearLayout(this).apply {
-
             orientation = LinearLayout.VERTICAL
             isFocusable = true
             isClickable = true
 
-            setPadding(
-                22,
-                19,
-                22,
-                19
-            )
+            setPadding(22, 19, 22, 19)
 
-            background =
-                GradientDrawable().apply {
+            background = GradientDrawable().apply {
+                setColor(Color.rgb(22, 33, 57))
+                cornerRadius = 18f
+                setStroke(
+                    2,
+                    Color.rgb(48, 75, 112)
+                )
+            }
+
+            setOnClickListener { click() }
+
+            setOnFocusChangeListener { _, focused ->
+                background = GradientDrawable().apply {
                     setColor(
-                        Color.rgb(
-                            22,
-                            33,
-                            57
-                        )
+                        if (focused) {
+                            Color.rgb(32, 66, 106)
+                        } else {
+                            Color.rgb(22, 33, 57)
+                        }
                     )
 
                     cornerRadius = 18f
 
                     setStroke(
-                        2,
-                        Color.rgb(
-                            48,
-                            75,
-                            112
-                        )
+                        if (focused) 5 else 2,
+                        if (focused) {
+                            cyan
+                        } else {
+                            Color.rgb(48, 75, 112)
+                        }
                     )
                 }
 
-            setOnClickListener {
-                click()
-            }
-
-            setOnFocusChangeListener {
-                _, focused ->
-
-                background =
-                    GradientDrawable().apply {
-
-                        setColor(
-                            if (focused) {
-                                Color.rgb(
-                                    32,
-                                    66,
-                                    106
-                                )
-                            } else {
-                                Color.rgb(
-                                    22,
-                                    33,
-                                    57
-                                )
-                            }
-                        )
-
-                        cornerRadius = 18f
-
-                        setStroke(
-                            if (focused) {
-                                5
-                            } else {
-                                2
-                            },
-                            if (focused) {
-                                cyan
-                            } else {
-                                Color.rgb(
-                                    48,
-                                    75,
-                                    112
-                                )
-                            }
-                        )
-                    }
-
-                scaleX =
-                    if (focused) 1.02f else 1f
-
-                scaleY =
-                    if (focused) 1.02f else 1f
+                scaleX = if (focused) 1.02f else 1f
+                scaleY = if (focused) 1.02f else 1f
             }
         }
 
         card.addView(
             text(title, 23f).apply {
-                setTypeface(
-                    null,
-                    Typeface.BOLD
-                )
+                setTypeface(null, Typeface.BOLD)
             }
         )
 
         card.addView(
             text(subtitle, 15f).apply {
-                setTextColor(
-                    Color.LTGRAY
-                )
+                setTextColor(Color.LTGRAY)
             }
         )
 
@@ -553,7 +427,6 @@ class MainActivity : Activity() {
     }
 
     private fun showHome() {
-
         screen("DREAMSTREAM ULTRA TV")
 
         root.addView(
@@ -564,23 +437,46 @@ class MainActivity : Activity() {
         )
 
         root.addView(
-            text(
-                "YOUR ENTERTAINMENT",
-                16f
-            ).apply {
+            text("YOUR ENTERTAINMENT", 16f).apply {
                 setTextColor(cyan)
             }
         )
 
+        // NEW LIVE TV SCREEN
         root.addView(
             tile(
                 "LIVE TV",
-                "Browse your live channels"
+                "Channels, logos, categories & recent"
             ) {
-                load("live")
+                val selected = account
+
+                if (selected != null) {
+                    startActivity(
+                        Intent(
+                            this,
+                            LiveTvActivity::class.java
+                        ).apply {
+                            putExtra(
+                                "server_index",
+                                XtreamApi.servers.indexOf(
+                                    selected.server
+                                )
+                            )
+                            putExtra(
+                                "username",
+                                selected.username
+                            )
+                            putExtra(
+                                "password",
+                                selected.password
+                            )
+                        }
+                    )
+                }
             }
         )
 
+        // EXISTING SEVEN-DAY SMART EPG
         root.addView(
             tile(
                 "SMART TV GUIDE",
@@ -625,10 +521,7 @@ class MainActivity : Activity() {
         )
 
         root.addView(
-            text(
-                "SPORTS",
-                16f
-            ).apply {
+            text("SPORTS", 16f).apply {
                 setTextColor(cyan)
             }
         )
@@ -663,14 +556,10 @@ class MainActivity : Activity() {
 
         root.addView(
             button("Log out") {
-
                 account = null
 
                 prefs.edit()
-                    .putBoolean(
-                        "auto_login",
-                        false
-                    )
+                    .putBoolean("auto_login", false)
                     .apply()
 
                 showLogin()
@@ -679,9 +568,7 @@ class MainActivity : Activity() {
     }
 
     private fun load(type: String) {
-
-        val selected =
-            account ?: return showLogin()
+        val selected = account ?: return showLogin()
 
         currentType = type
 
@@ -697,7 +584,6 @@ class MainActivity : Activity() {
         )
 
         runNetwork {
-
             val loadedCategories =
                 XtreamApi.categories(
                     selected,
@@ -711,19 +597,14 @@ class MainActivity : Activity() {
                 )
 
             runOnUiThread {
-                categories =
-                    loadedCategories
-
-                allStreams =
-                    loadedStreams
-
+                categories = loadedCategories
+                allStreams = loadedStreams
                 showLibrary()
             }
         }
     }
 
     private fun showLibrary() {
-
         screen(
             "${currentType.uppercase()} / ${account?.server?.name}"
         )
@@ -744,37 +625,28 @@ class MainActivity : Activity() {
         root.addView(search)
 
         val options =
-            listOf(
-                "" to "All categories"
-            ) + categories
+            listOf("" to "All categories") + categories
 
         val category = Spinner(this).apply {
-
             adapter = ArrayAdapter(
                 this@MainActivity,
                 android.R.layout.simple_spinner_dropdown_item,
-                options.map {
-                    it.second
-                }
+                options.map { it.second }
             )
         }
 
         root.addView(category)
 
-        val results =
-            LinearLayout(this).apply {
-                orientation =
-                    LinearLayout.VERTICAL
-            }
+        val results = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
 
         root.addView(results)
 
         fun refresh() {
-
             results.removeAllViews()
 
-            val query =
-                search.text.toString().trim()
+            val query = search.text.toString().trim()
 
             val selectedCategory =
                 options[
@@ -782,22 +654,19 @@ class MainActivity : Activity() {
                         .coerceAtLeast(0)
                 ].first
 
-            val matches =
-                allStreams.filter {
-
-                    (
-                        selectedCategory.isEmpty() ||
-                        it.categoryId ==
-                            selectedCategory
-                    ) &&
-                    (
-                        query.isEmpty() ||
-                        it.title.contains(
-                            query,
-                            ignoreCase = true
-                        )
+            val matches = allStreams.filter {
+                (
+                    selectedCategory.isEmpty() ||
+                    it.categoryId == selectedCategory
+                ) &&
+                (
+                    query.isEmpty() ||
+                    it.title.contains(
+                        query,
+                        ignoreCase = true
                     )
-                }
+                )
+            }
 
             results.addView(
                 text(
@@ -806,26 +675,18 @@ class MainActivity : Activity() {
                 )
             )
 
-            matches.take(200).forEach {
-                stream ->
+            matches.take(200).forEach { stream ->
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                }
 
-                val row =
-                    LinearLayout(this).apply {
-                        orientation =
-                            LinearLayout.HORIZONTAL
+                val open = button(stream.title) {
+                    if (stream.type == "series") {
+                        showEpisodes(stream)
+                    } else {
+                        play(stream)
                     }
-
-                val open =
-                    button(stream.title) {
-
-                        if (
-                            stream.type == "series"
-                        ) {
-                            showEpisodes(stream)
-                        } else {
-                            play(stream)
-                        }
-                    }
+                }
 
                 row.addView(
                     open,
@@ -836,39 +697,36 @@ class MainActivity : Activity() {
                     )
                 )
 
-                val favourite =
-                    button(
-                        if (
-                            FavouritesStore.contains(
-                                this,
-                                account!!,
-                                stream
-                            )
-                        ) {
-                            "★"
-                        } else {
-                            "☆"
-                        }
-                    ) {
-
-                        val selected =
-                            account ?: return@button
-
-                        FavouritesStore.toggle(
+                val favourite = button(
+                    if (
+                        FavouritesStore.contains(
                             this,
-                            selected,
+                            account!!,
                             stream
                         )
-
-                        refresh()
+                    ) {
+                        "★"
+                    } else {
+                        "☆"
                     }
+                ) {
+                    val selected =
+                        account ?: return@button
+
+                    FavouritesStore.toggle(
+                        this,
+                        selected,
+                        stream
+                    )
+
+                    refresh()
+                }
 
                 row.addView(favourite)
                 results.addView(row)
             }
 
             if (matches.size > 200) {
-
                 results.addView(
                     text(
                         "Showing first 200. Search to narrow results.",
@@ -879,8 +737,7 @@ class MainActivity : Activity() {
         }
 
         category.onItemSelectedListener =
-            object :
-                AdapterView.OnItemSelectedListener {
+            object : AdapterView.OnItemSelectedListener {
 
                 override fun onNothingSelected(
                     parent: AdapterView<*>?
@@ -925,7 +782,6 @@ class MainActivity : Activity() {
     }
 
     private fun showFavourites() {
-
         val selected =
             account ?: return showLogin()
 
@@ -937,11 +793,10 @@ class MainActivity : Activity() {
             }
         )
 
-        val entries =
-            FavouritesStore.list(
-                this,
-                selected
-            )
+        val entries = FavouritesStore.list(
+            this,
+            selected
+        )
 
         if (entries.isEmpty()) {
             root.addView(
@@ -951,69 +806,59 @@ class MainActivity : Activity() {
             )
         }
 
-        entries.groupBy {
-            it.type
-        }.forEach { (type, items) ->
+        entries.groupBy { it.type }
+            .forEach { (type, items) ->
 
-            root.addView(
-                text(
-                    type.uppercase(),
-                    21f
-                ).apply {
-                    setTextColor(cyan)
-                }
-            )
-
-            items.forEach { stream ->
-
-                val row =
-                    LinearLayout(this).apply {
-                        orientation =
-                            LinearLayout.HORIZONTAL
+                root.addView(
+                    text(
+                        type.uppercase(),
+                        21f
+                    ).apply {
+                        setTextColor(cyan)
                     }
-
-                row.addView(
-                    button(stream.title) {
-
-                        if (
-                            stream.type == "series"
-                        ) {
-                            showEpisodes(stream)
-                        } else {
-                            play(stream)
-                        }
-                    },
-                    LinearLayout.LayoutParams(
-                        0,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        1f
-                    )
                 )
 
-                row.addView(
-                    button("REMOVE") {
+                items.forEach { stream ->
+                    val row = LinearLayout(this).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                    }
 
-                        FavouritesStore.toggle(
-                            this,
-                            selected,
-                            stream
+                    row.addView(
+                        button(stream.title) {
+                            if (stream.type == "series") {
+                                showEpisodes(stream)
+                            } else {
+                                play(stream)
+                            }
+                        },
+                        LinearLayout.LayoutParams(
+                            0,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            1f
                         )
+                    )
 
-                        showFavourites()
-                    }
-                )
+                    row.addView(
+                        button("REMOVE") {
+                            FavouritesStore.toggle(
+                                this,
+                                selected,
+                                stream
+                            )
 
-                root.addView(row)
+                            showFavourites()
+                        }
+                    )
+
+                    root.addView(row)
+                }
             }
-        }
     }
 
     private fun showEpisodes(
         series: XtreamApi.Stream
     ) {
-
-        val selected =
-            account ?: return
+        val selected = account ?: return
 
         screen(
             "EPISODES / ${series.title}"
@@ -1026,14 +871,10 @@ class MainActivity : Activity() {
         )
 
         root.addView(
-            text(
-                "Loading episodes...",
-                16f
-            )
+            text("Loading episodes...", 16f)
         )
 
         runNetwork {
-
             val episodes =
                 XtreamApi.seriesEpisodes(
                     selected,
@@ -1041,7 +882,6 @@ class MainActivity : Activity() {
                 )
 
             runOnUiThread {
-
                 screen(
                     "EPISODES / ${series.title}"
                 )
@@ -1053,20 +893,14 @@ class MainActivity : Activity() {
                 )
 
                 if (episodes.isEmpty()) {
-
                     root.addView(
-                        text(
-                            "No episodes available"
-                        )
+                        text("No episodes available")
                     )
                 }
 
                 episodes.forEach { episode ->
-
                     root.addView(
-                        button(
-                            episode.title
-                        ) {
+                        button(episode.title) {
                             play(episode)
                         }
                     )
@@ -1078,15 +912,12 @@ class MainActivity : Activity() {
     private fun play(
         stream: XtreamApi.Stream
     ) {
+        val selected = account ?: return
 
-        val selected =
-            account ?: return
-
-        val url =
-            XtreamApi.playbackUrl(
-                selected,
-                stream
-            )
+        val url = XtreamApi.playbackUrl(
+            selected,
+            stream
+        )
 
         startActivity(
             Intent(
