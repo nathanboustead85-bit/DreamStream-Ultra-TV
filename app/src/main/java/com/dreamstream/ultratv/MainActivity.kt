@@ -1,49 +1,57 @@
 package com.dreamstream.ultratv
 
 import android.app.Activity
-import android.os.Bundle
+import android.content.Intent
 import android.graphics.Color
+import android.os.Bundle
 import android.view.Gravity
+import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 
+/** Integration entry point for the Sports News and Live Sports Finder modules. */
 class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val root = LinearLayout(this).apply {
+        val bg = Color.rgb(9, 14, 30)
+        val scroll = ScrollView(this).apply { setBackgroundColor(bg) }
+        val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setBackgroundColor(Color.rgb(8, 12, 27))
-            setPadding(32, 32, 32, 32)
+            setPadding(42, 34, 42, 34)
         }
-        root.addView(TextView(this).apply {
+        scroll.addView(layout)
+        setContentView(scroll)
+        layout.addView(TextView(this).apply {
             text = "DREAMSTREAM ULTRA TV"
-            textSize = 30f
+            textSize = 32f
+            setTextColor(Color.rgb(48, 207, 255))
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, 24)
+        })
+        layout.addView(TextView(this).apply {
+            text = "Sports features • Development build"
+            textSize = 18f
             setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, 18)
         })
-        root.addView(TextView(this).apply {
-            text = "TV foundation ready — choose a section with your remote"
-            textSize = 17f
-            setTextColor(Color.LTGRAY)
-            gravity = Gravity.CENTER
-        })
-        listOf("Live TV", "Movies", "Series", "Favourites", "Settings").forEach { section ->
-            root.addView(TextView(this).apply {
-                text = section
-                textSize = 21f
-                setTextColor(Color.WHITE)
-                setPadding(30, 14, 30, 14)
+        fun addButton(title: String, target: Class<out Activity>) {
+            layout.addView(Button(this).apply {
+                text = title
+                isAllCaps = false
+                textSize = 20f
                 isFocusable = true
-                setOnFocusChangeListener { view, focused ->
-                    view.setBackgroundColor(if (focused) Color.rgb(43, 93, 190) else Color.TRANSPARENT)
-                }
-                setOnClickListener {
-                    Toast.makeText(this@MainActivity, "$section coming next", Toast.LENGTH_SHORT).show()
-                }
+                setOnClickListener { startActivity(Intent(this@MainActivity, target)) }
             })
         }
-        setContentView(root)
+        addButton("Sports News Hub", SportsNewsActivity::class.java)
+        addButton("Favourites / Live Sports Finder", LiveSportsFinderActivity::class.java)
+        layout.addView(TextView(this).apply {
+            text = "Add your own authorised M3U and XMLTV sources in Live Sports Finder. " +
+                "This development entry screen does not replace a complete IPTV client."
+            textSize = 16f
+            setTextColor(Color.LTGRAY)
+            setPadding(0, 20, 0, 0)
+        })
     }
 }
