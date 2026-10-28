@@ -10,7 +10,6 @@ import android.text.Editable
 import android.text.TextWatcher
 import android.util.Xml
 import android.view.Gravity
-import android.view.View
 import android.view.ViewGroup
 import android.widget.*
 import org.xmlpull.v1.XmlPullParser
@@ -27,9 +26,13 @@ import java.util.concurrent.Executors
 import java.util.zip.GZIPInputStream
 
 object SmartEpg {
-    private const val BASE = "https://epgshare01.online/epgshare01/"
-    private const val CACHE_MS = 12L * 60 * 60 * 1000
-    private const val MAX_BYTES = 20L * 1024 * 1024
+
+    private const val BASE =
+        "https://epgshare01.online/epgshare01/"
+    private const val CACHE_MS =
+        12L * 60L * 60L * 1000L
+    private const val MAX_BYTES =
+        20L * 1024L * 1024L
 
     private val countries = listOf(
         "United Kingdom" to "UK1",
@@ -55,7 +58,8 @@ object SmartEpg {
         val id: String,
         val name: String
     ) {
-        val key: String get() = "$code|$id"
+        val key: String
+            get() = "$code|$id"
     }
 
     private data class Listing(
@@ -75,59 +79,76 @@ object SmartEpg {
         val messages: List<String>
     )
 
-    private fun dp(activity: Activity, n: Int) =
-        (n * activity.resources.displayMetrics.density + 0.5f).toInt()
+    private fun dp(
+        activity: Activity,
+        value: Int
+    ): Int = (
+        value *
+        activity.resources.displayMetrics.density +
+        0.5f
+    ).toInt()
 
-    private fun normalise(value: String) =
+    private fun normalise(value: String): String =
         value.lowercase(Locale.ROOT)
             .replace(
-                Regex("\\b(uk|us|usa|ca|canada|nz|hd|fhd|uhd|4k|sd|hevc|h265)\\b"),
+                Regex(
+                    "\\b(uk|us|usa|ca|canada|nz|" +
+                    "hd|fhd|uhd|4k|sd|hevc|h265)\\b"
+                ),
                 " "
             )
-            .replace(Regex("[^a-z0-9]+"), " ")
+            .replace(
+                Regex("[^a-z0-9]+"),
+                " "
+            )
             .trim()
             .replace(Regex("\\s+"), " ")
 
-    private fun digest(value: String) =
+    private fun digest(value: String): String =
         MessageDigest.getInstance("SHA-256")
             .digest(value.toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
+            .joinToString("") {
+                "%02x".format(it)
+            }
 
-    private fun prefs(activity: Activity) =
+    private fun preferences(activity: Activity) =
         activity.getSharedPreferences(
             "dreamstream_manual_epg",
             Activity.MODE_PRIVATE
         )
 
-    private fun key(
+    private fun mappingKey(
         account: XtreamApi.Account,
         stream: XtreamApi.Stream
-    ) = digest(
-        "${account.server.url}|${account.username}|${stream.id}"
+    ): String = digest(
+        account.server.url + "|" +
+        account.username + "|" +
+        stream.id
     )
 
-    private fun saved(
+    private fun savedMapping(
         activity: Activity,
         account: XtreamApi.Account,
         stream: XtreamApi.Stream
-    ) = prefs(activity).getString(
-        key(account, stream),
+    ): String? = preferences(activity).getString(
+        mappingKey(account, stream),
         null
     )
 
-    private fun save(
+    private fun saveMapping(
         activity: Activity,
         account: XtreamApi.Account,
         stream: XtreamApi.Stream,
         channel: Channel?
     ) {
-        val editor = prefs(activity).edit()
+        val editor = preferences(activity).edit()
+        val key = mappingKey(account, stream)
 
         if (channel == null) {
-            editor.remove(key(account, stream))
+            editor.remove(key)
         } else {
             editor.putString(
-                key(account, stream),
+                key,
                 channel.key
             )
         }
@@ -136,27 +157,30 @@ object SmartEpg {
     }
 
     private fun parseDate(value: String): Long {
-        for (
-            pattern in listOf(
-                "yyyyMMddHHmmss Z",
-                "yyyyMMddHHmm Z",
-                "yyyyMMddHHmmss",
-                "yyyyMMddHHmm"
-            )
-        ) {
+        val patterns = listOf(
+            "yyyyMMddHHmmss Z",
+            "yyyyMMddHHmm Z",
+            "yyyyMMddHHmmss",
+            "yyyyMMddHHmm"
+        )
+
+        for (pattern in patterns) {
             try {
                 val formatter = SimpleDateFormat(
                     pattern,
                     Locale.US
                 ).apply {
                     isLenient = false
-                    timeZone = TimeZone.getTimeZone("UTC")
+                    timeZone =
+                        TimeZone.getTimeZone("UTC")
                 }
 
-                val result = formatter.parse(value.trim())
+                val parsed = formatter.parse(
+                    value.trim()
+                )
 
-                if (result != null) {
-                    return result.time
+                if (parsed != null) {
+                    return parsed.time
                 }
             } catch (_: Exception) {
             }
@@ -165,13 +189,13 @@ object SmartEpg {
         return 0L
     }
 
-    private fun format(
-        ms: Long,
+    private fun formatDate(
+        value: Long,
         pattern: String
-    ) = SimpleDateFormat(
+    ): String = SimpleDateFormat(
         pattern,
         Locale.UK
-    ).format(Date(ms))
+    ).format(Date(value))
 
     private fun dayStart(offset: Int): Long =
         Calendar.getInstance().apply {
@@ -182,10 +206,10 @@ object SmartEpg {
             add(Calendar.DAY_OF_YEAR, offset)
         }.timeInMillis
 
-    private fun cache(
+    private fun cacheFile(
         activity: Activity,
         code: String
-    ) = File(
+    ): File = File(
         activity.cacheDir,
         "dreamstream_epg_$code.xml.gz"
     )
@@ -195,22 +219,25 @@ object SmartEpg {
         code: String,
         force: Boolean
     ): File {
-        val target = cache(activity, code)
+        val target = cacheFile(activity, code)
 
-        val timestamp = activity.getSharedPreferences(
+        val updated = activity.getSharedPreferences(
             "dreamstream_epg_cache",
             Activity.MODE_PRIVATE
-        ).getLong(code, 0)
+        ).getLong(code, 0L)
+
+        val age =
+            System.currentTimeMillis() - updated
 
         if (
             !force &&
             target.exists() &&
-            System.currentTimeMillis() - timestamp in 0 until CACHE_MS
+            age in 0 until CACHE_MS
         ) {
             return target
         }
 
-        val temp = File(
+        val temporary = File(
             activity.cacheDir,
             "dreamstream_epg_$code.tmp"
         )
@@ -231,35 +258,39 @@ object SmartEpg {
             }
 
             connection.inputStream.use { input ->
-                temp.outputStream().use { output ->
-                    val bytes = ByteArray(8192)
+                temporary.outputStream().use { output ->
+                    val buffer = ByteArray(8192)
                     var total = 0L
 
                     while (true) {
-                        val n = input.read(bytes)
+                        val count = input.read(buffer)
 
-                        if (n < 0) break
+                        if (count < 0) break
 
-                        total += n
+                        total += count
 
                         check(total <= MAX_BYTES) {
                             "EPG feed exceeds 20 MB"
                         }
 
-                        output.write(bytes, 0, n)
+                        output.write(
+                            buffer,
+                            0,
+                            count
+                        )
                     }
                 }
             }
 
             GZIPInputStream(
-                temp.inputStream()
+                temporary.inputStream()
             ).use {
                 check(it.read() >= 0) {
                     "Empty EPG gzip"
                 }
             }
 
-            temp.copyTo(
+            temporary.copyTo(
                 target,
                 overwrite = true
             )
@@ -285,7 +316,7 @@ object SmartEpg {
 
         } finally {
             connection.disconnect()
-            temp.delete()
+            temporary.delete()
         }
     }
 
@@ -300,12 +331,14 @@ object SmartEpg {
         val wanted = streams.map {
             normalise(it.title)
         }.filter {
-            it.isNotEmpty()
+            it.isNotBlank()
         }.toSet()
 
-        val manuallyWanted = manual.values.toSet()
+        val manuallyWanted =
+            manual.values.toSet()
 
-        val channels = mutableListOf<Channel>()
+        val channels =
+            mutableListOf<Channel>()
 
         val aliases =
             mutableMapOf<String, MutableSet<String>>()
@@ -327,13 +360,14 @@ object SmartEpg {
             parser.setInput(input, "UTF-8")
 
             var event = parser.eventType
+
             var inChannel = false
             var inProgramme = false
 
             var channelId = ""
             var channelName = ""
-            var programmeChannel = ""
 
+            var programmeChannel = ""
             var start = 0L
             var end = 0L
             var title = ""
@@ -361,14 +395,19 @@ object SmartEpg {
                                 channelId
                             ) {
                                 mutableSetOf()
-                            }.add(normalise(channelId))
+                            }.add(
+                                normalise(channelId)
+                            )
                         }
 
                         "display-name" -> {
                             if (inChannel) {
-                                val name = parser.nextText()
+                                val name =
+                                    parser.nextText()
 
-                                if (channelName.isBlank()) {
+                                if (
+                                    channelName.isBlank()
+                                ) {
                                     channelName = name
                                 }
 
@@ -376,7 +415,9 @@ object SmartEpg {
                                     channelId
                                 ) {
                                     mutableSetOf()
-                                }.add(normalise(name))
+                                }.add(
+                                    normalise(name)
+                                )
                             }
                         }
 
@@ -420,7 +461,9 @@ object SmartEpg {
                     when (parser.name) {
 
                         "channel" -> {
-                            if (channelId.isNotBlank()) {
+                            if (
+                                channelId.isNotBlank()
+                            ) {
                                 val channel = Channel(
                                     code,
                                     country,
@@ -440,14 +483,17 @@ object SmartEpg {
                                     }
 
                                 names.add(
-                                    normalise(channel.name)
+                                    normalise(
+                                        channel.name
+                                    )
                                 )
 
                                 if (
                                     names.any {
                                         it in wanted
                                     } ||
-                                    channel.key in manuallyWanted
+                                    channel.key in
+                                        manuallyWanted
                                 ) {
                                     selected[channelId] =
                                         channel
@@ -508,32 +554,39 @@ object SmartEpg {
         for (stream in streams) {
             val manualKey = manual[stream.id]
 
-            val chosen = if (manualKey != null) {
-                selected.values.firstOrNull {
-                    it.key == manualKey
+            val chosen =
+                if (manualKey != null) {
+                    selected.values.firstOrNull {
+                        it.key == manualKey
+                    }
+                } else {
+                    candidates[
+                        normalise(stream.title)
+                    ]?.singleOrNull()?.let {
+                        selected[it]
+                    }
                 }
-            } else {
-                candidates[
-                    normalise(stream.title)
-                ]?.singleOrNull()?.let {
-                    selected[it]
-                }
-            }
 
             if (chosen != null) {
                 listings[stream.id] = Listing(
                     chosen,
-                    programmes[chosen.id].orEmpty()
-                        .sortedBy { it.start },
+                    programmes[chosen.id]
+                        .orEmpty()
+                        .sortedBy {
+                            it.start
+                        },
                     manualKey != null
                 )
             }
         }
 
-        return Feed(channels, listings)
+        return Feed(
+            channels,
+            listings
+        )
     }
 
-    private fun load(
+    private fun loadCombined(
         activity: Activity,
         account: XtreamApi.Account,
         streams: List<XtreamApi.Stream>,
@@ -541,8 +594,9 @@ object SmartEpg {
         progress: (String) -> Unit
     ): Result {
 
-        val manual = streams.mapNotNull { stream ->
-            saved(
+        val manual = streams.mapNotNull {
+            stream ->
+            savedMapping(
                 activity,
                 account,
                 stream
@@ -551,43 +605,66 @@ object SmartEpg {
             }
         }.toMap()
 
-        val channels = mutableListOf<Channel>()
+        val channels =
+            mutableListOf<Channel>()
 
         val listings =
             mutableMapOf<String, Listing>()
 
-        val messages = mutableListOf<String>()
+        val messages =
+            mutableListOf<String>()
 
         for ((country, code) in countries) {
+
             progress("Loading $country...")
 
             try {
                 val feed = parseFeed(
-                    obtain(activity, code, force),
+                    obtain(
+                        activity,
+                        code,
+                        force
+                    ),
                     code,
                     country,
                     streams,
                     manual
                 )
 
-                channels.addAll(feed.channels)
+                channels.addAll(
+                    feed.channels
+                )
 
-                feed.listings.forEach { (id, listing) ->
-                    val mapping = manual[id]
+                feed.listings.forEach {
+                    (streamId, listing) ->
+
+                    val mapping =
+                        manual[streamId]
 
                     if (
-                        (mapping == null && id !in listings) ||
-                        mapping == listing.channel.key
+                        (
+                            mapping == null &&
+                            streamId !in listings
+                        ) ||
+                        mapping ==
+                            listing.channel.key
                     ) {
-                        listings[id] = listing
+                        listings[streamId] =
+                            listing
                     }
                 }
 
-                messages.add("$country: loaded")
+                messages.add(
+                    "$country: loaded"
+                )
 
             } catch (error: Exception) {
                 messages.add(
-                    "$country: ${error.message ?: "unavailable"}"
+                    "$country: " +
+                    (
+                        error.message
+                            ?: "unavailable"
+                    )
                 )
             }
         }
@@ -607,119 +684,162 @@ object SmartEpg {
         val executor =
             Executors.newSingleThreadExecutor()
 
-        val root = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
+        val root =
+            LinearLayout(activity).apply {
+                orientation =
+                    LinearLayout.VERTICAL
 
-            setPadding(
-                dp(activity, 14),
-                dp(activity, 10),
-                dp(activity, 14),
-                dp(activity, 12)
-            )
+                setPadding(
+                    dp(activity, 14),
+                    dp(activity, 10),
+                    dp(activity, 14),
+                    dp(activity, 12)
+                )
 
-            setBackgroundColor(navy)
-        }
+                setBackgroundColor(navy)
+            }
 
-        val dialog = AlertDialog.Builder(activity)
-            .setView(root)
-            .create()
+        val dialog =
+            AlertDialog.Builder(activity)
+                .setView(root)
+                .create()
 
-        fun text(
+        fun textLabel(
             value: String,
             size: Float = 15f,
-            color: Int = Color.WHITE
-        ) = TextView(activity).apply {
-            this.text = value
-            textSize = size
-            setTextColor(color)
+            colour: Int = Color.WHITE
+        ): TextView =
+            TextView(activity).apply {
+                text = value
+                textSize = size
+                setTextColor(colour)
 
-            setPadding(
-                dp(activity, 5),
-                dp(activity, 7),
-                dp(activity, 5),
-                dp(activity, 7)
-            )
-        }
+                setPadding(
+                    dp(activity, 5),
+                    dp(activity, 7),
+                    dp(activity, 5),
+                    dp(activity, 7)
+                )
+            }
 
         fun button(
             value: String,
             action: () -> Unit
-        ) = Button(activity).apply {
-            text = value
-            isAllCaps = false
-            isFocusable = true
-            setOnClickListener {
-                action()
-            }
-        }
+        ): Button =
+            Button(activity).apply {
+                text = value
+                isAllCaps = false
+                isFocusable = true
 
-        fun tile(
-            value: String,
-            action: () -> Unit
-        ) = TextView(activity).apply {
-            text = value
-            textSize = 14f
-            setTextColor(Color.WHITE)
-
-            setPadding(
-                dp(activity, 12),
-                dp(activity, 13),
-                dp(activity, 12),
-                dp(activity, 13)
-            )
-
-            gravity = Gravity.CENTER_VERTICAL
-            isFocusable = true
-            isClickable = true
-
-            background = GradientDrawable().apply {
-                setColor(panel)
-                cornerRadius =
-                    dp(activity, 8).toFloat()
-            }
-
-            setOnFocusChangeListener { _, focused ->
-                background = GradientDrawable().apply {
-                    setColor(
-                        if (focused) {
-                            Color.rgb(13, 104, 153)
-                        } else {
-                            panel
-                        }
-                    )
-
-                    setStroke(
-                        dp(activity, 2),
-                        if (focused) cyan else navy
-                    )
-
-                    cornerRadius =
-                        dp(activity, 8).toFloat()
+                setOnClickListener {
+                    action()
                 }
             }
 
-            setOnClickListener {
-                action()
+        fun programmeTile(
+            value: String,
+            action: () -> Unit
+        ): TextView =
+            TextView(activity).apply {
+                text = value
+                textSize = 14f
+
+                setTextColor(
+                    Color.WHITE
+                )
+
+                setPadding(
+                    dp(activity, 12),
+                    dp(activity, 13),
+                    dp(activity, 12),
+                    dp(activity, 13)
+                )
+
+                gravity =
+                    Gravity.CENTER_VERTICAL
+
+                isFocusable = true
+                isClickable = true
+
+                background =
+                    GradientDrawable().apply {
+                        setColor(panel)
+
+                        cornerRadius =
+                            dp(
+                                activity,
+                                8
+                            ).toFloat()
+                    }
+
+                setOnFocusChangeListener {
+                    _, focused ->
+
+                    background =
+                        GradientDrawable().apply {
+                            setColor(
+                                if (focused) {
+                                    Color.rgb(
+                                        13,
+                                        104,
+                                        153
+                                    )
+                                } else {
+                                    panel
+                                }
+                            )
+
+                            setStroke(
+                                dp(activity, 2),
+                                if (focused) {
+                                    cyan
+                                } else {
+                                    navy
+                                }
+                            )
+
+                            cornerRadius =
+                                dp(
+                                    activity,
+                                    8
+                                ).toFloat()
+                        }
+                }
+
+                setOnClickListener {
+                    action()
+                }
             }
-        }
 
         root.addView(
-            text(
+            textLabel(
                 "DREAMSTREAM • 7-DAY TV GUIDE",
                 23f,
                 cyan
-            )
+            ).apply {
+                setTypeface(
+                    null,
+                    Typeface.BOLD
+                )
+            }
         )
 
-        val toolbar = LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
+        val toolbar =
+            LinearLayout(activity).apply {
+                orientation =
+                    LinearLayout.HORIZONTAL
+            }
 
-        val loadButton = button("LOAD GUIDE") {}
-        val refreshButton = button("REFRESH") {}
-        val closeButton = button("CLOSE") {
-            dialog.dismiss()
-        }
+        val loadButton =
+            button("LOAD GUIDE") {}
+
+        val refreshButton =
+            button("REFRESH") {}
+
+        val closeButton =
+            button("CLOSE") {
+                dialog.dismiss()
+            }
 
         toolbar.addView(
             loadButton,
@@ -750,36 +870,46 @@ object SmartEpg {
 
         root.addView(toolbar)
 
-        val status = text(
-            "Load the combined UK, USA, Canada and NZ guide.",
+        val status = textLabel(
+            "Loading combined guide...",
             13f,
             muted
         )
 
         root.addView(status)
 
-        val search = EditText(activity).apply {
-            hint = "Search IPTV channels"
-            setSingleLine(true)
-            setTextColor(Color.WHITE)
-            setHintTextColor(muted)
-        }
+        val search =
+            EditText(activity).apply {
+                hint =
+                    "Search IPTV channels"
+
+                setSingleLine(true)
+                setTextColor(Color.WHITE)
+                setHintTextColor(muted)
+            }
 
         root.addView(search)
 
-        val dayRow = LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
+        val dayRow =
+            LinearLayout(activity).apply {
+                orientation =
+                    LinearLayout.HORIZONTAL
+            }
 
         root.addView(dayRow)
 
-        val scroll = ScrollView(activity).apply {
-            fillViewport = true
-        }
+        // Corrected property:
+        // isFillViewport, not fillViewport.
+        val scroll =
+            ScrollView(activity).apply {
+                isFillViewport = true
+            }
 
-        val rows = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-        }
+        val rows =
+            LinearLayout(activity).apply {
+                orientation =
+                    LinearLayout.VERTICAL
+            }
 
         scroll.addView(rows)
 
@@ -792,17 +922,25 @@ object SmartEpg {
             )
         )
 
-        var streams = emptyList<XtreamApi.Stream>()
-        var channels = emptyList<Channel>()
-        var listings = emptyMap<String, Listing>()
+        var streams =
+            emptyList<XtreamApi.Stream>()
 
-        var day = 0
+        var channels =
+            emptyList<Channel>()
+
+        var listings =
+            emptyMap<String, Listing>()
+
+        var selectedDay = 0
         var loading = false
 
-        var reload: () -> Unit = {}
-        var render: () -> Unit = {}
+        var reloadAction: () -> Unit = {}
+        var renderAction: () -> Unit = {}
+        var updateDaysAction: () -> Unit = {}
 
-        fun chooseMapping(stream: XtreamApi.Stream) {
+        fun chooseMapping(
+            stream: XtreamApi.Stream
+        ) {
 
             if (channels.isEmpty()) {
                 Toast.makeText(
@@ -814,21 +952,26 @@ object SmartEpg {
                 return
             }
 
-            val layout = LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
+            val layout =
+                LinearLayout(activity).apply {
+                    orientation =
+                        LinearLayout.VERTICAL
 
-                setPadding(
-                    dp(activity, 12),
-                    dp(activity, 8),
-                    dp(activity, 12),
-                    dp(activity, 8)
-                )
-            }
+                    setPadding(
+                        dp(activity, 12),
+                        dp(activity, 8),
+                        dp(activity, 12),
+                        dp(activity, 8)
+                    )
+                }
 
-            val input = EditText(activity).apply {
-                hint = "Search EPG channel"
-                setSingleLine(true)
-            }
+            val input =
+                EditText(activity).apply {
+                    hint =
+                        "Search EPG channel"
+
+                    setSingleLine(true)
+                }
 
             val list = ListView(activity)
 
@@ -842,59 +985,82 @@ object SmartEpg {
                 )
             )
 
-            val picker = AlertDialog.Builder(activity)
-                .setTitle("Match ${stream.title}")
-                .setView(layout)
-                .setNegativeButton("CANCEL", null)
-                .setNeutralButton(
-                    "RESET TO AUTOMATIC"
-                ) { _, _ ->
-                    save(
-                        activity,
-                        account,
-                        stream,
+            val picker =
+                AlertDialog.Builder(activity)
+                    .setTitle(
+                        "Match ${stream.title}"
+                    )
+                    .setView(layout)
+                    .setNegativeButton(
+                        "CANCEL",
                         null
                     )
+                    .setNeutralButton(
+                        "RESET TO AUTOMATIC"
+                    ) { _, _ ->
 
-                    reload()
-                }
-                .create()
+                        saveMapping(
+                            activity,
+                            account,
+                            stream,
+                            null
+                        )
 
-            var shown = emptyList<Channel>()
+                        reloadAction()
+                    }
+                    .create()
 
-            fun update() {
+            var shown =
+                emptyList<Channel>()
+
+            fun updateList() {
                 val query =
-                    input.text.toString().trim()
+                    input.text.toString()
+                        .trim()
 
                 shown = channels.filter {
                     query.isBlank() ||
-                        it.name.contains(query, true) ||
-                        it.id.contains(query, true) ||
-                        it.country.contains(query, true)
+                    it.name.contains(
+                        query,
+                        true
+                    ) ||
+                    it.id.contains(
+                        query,
+                        true
+                    ) ||
+                    it.country.contains(
+                        query,
+                        true
+                    )
                 }.take(200)
 
-                list.adapter = ArrayAdapter(
-                    activity,
-                    android.R.layout.simple_list_item_1,
-                    shown.map {
-                        "${it.name} (${it.country})"
-                    }
-                )
+                list.adapter =
+                    ArrayAdapter(
+                        activity,
+                        android.R.layout
+                            .simple_list_item_1,
+                        shown.map {
+                            "${it.name} (${it.country})"
+                        }
+                    )
             }
 
             list.setOnItemClickListener {
                 _, _, position, _ ->
 
-                shown.getOrNull(position)?.let {
-                    save(
+                shown.getOrNull(
+                    position
+                )?.let { channel ->
+
+                    saveMapping(
                         activity,
                         account,
                         stream,
-                        it
+                        channel
                     )
 
                     picker.dismiss()
-                    reload()
+                    reloadAction()
                 }
             }
 
@@ -906,7 +1072,7 @@ object SmartEpg {
                         start: Int,
                         count: Int,
                         after: Int
-                    ) {}
+                    ) = Unit
 
                     override fun onTextChanged(
                         s: CharSequence?,
@@ -914,43 +1080,55 @@ object SmartEpg {
                         before: Int,
                         count: Int
                     ) {
-                        update()
+                        updateList()
                     }
 
                     override fun afterTextChanged(
                         s: Editable?
-                    ) {}
+                    ) = Unit
                 }
             )
 
-            update()
+            updateList()
             picker.show()
         }
 
-        fun details(
+        fun showDetails(
             stream: XtreamApi.Stream,
             listing: Listing,
             programme: Programme
         ) {
 
-            val info =
+            val information =
                 "${stream.title}\n" +
                 "${listing.channel.country} • " +
                 "${listing.channel.name}\n" +
-                "${format(programme.start, "EEE d MMM HH:mm")}" +
+                formatDate(
+                    programme.start,
+                    "EEE d MMM HH:mm"
+                ) +
                 " – " +
-                format(
+                formatDate(
                     programme.end,
                     "EEE d MMM HH:mm"
                 ) +
-                "\n\n${programme.title}"
+                "\n\n" +
+                programme.title
 
             AlertDialog.Builder(activity)
-                .setTitle("PROGRAMME DETAILS")
-                .setMessage(info)
+                .setTitle(
+                    "PROGRAMME DETAILS"
+                )
+                .setMessage(information)
                 .setPositiveButton(
                     "WATCH CHANNEL"
                 ) { _, _ ->
+
+                    val url =
+                        XtreamApi.playbackUrl(
+                            account,
+                            stream
+                        )
 
                     activity.startActivity(
                         Intent(
@@ -958,37 +1136,40 @@ object SmartEpg {
                             PlayerActivity::class.java
                         ).putExtra(
                             "url",
-                            XtreamApi.playbackUrl(
-                                account,
-                                stream
-                            )
+                            url
                         )
                     )
                 }
-                .setNegativeButton("CLOSE", null)
+                .setNegativeButton(
+                    "CLOSE",
+                    null
+                )
                 .show()
         }
 
-        fun updateDays() {
+        updateDaysAction = {
             dayRow.removeAllViews()
 
             for (index in 0..6) {
 
-                val date = format(
+                val date = formatDate(
                     dayStart(index),
                     "EEE d MMM"
                 )
 
                 val dayButton = button(
-                    if (day == index) {
+                    if (
+                        selectedDay == index
+                    ) {
                         "● $date"
                     } else {
                         date
                     }
                 ) {
-                    day = index
-                    updateDays()
-                    render()
+                    selectedDay = index
+
+                    updateDaysAction()
+                    renderAction()
                 }
 
                 dayButton.textSize = 11f
@@ -1004,39 +1185,59 @@ object SmartEpg {
             }
         }
 
-        render = {
+        renderAction = {
             rows.removeAllViews()
 
             val query =
-                search.text.toString().trim()
+                search.text.toString()
+                    .trim()
 
-            val filtered = streams.filter {
-                query.isBlank() ||
-                    it.title.contains(query, true)
-            }
+            val filtered =
+                streams.filter {
+                    query.isBlank() ||
+                    it.title.contains(
+                        query,
+                        true
+                    )
+                }
 
-            val start = dayStart(day)
-            val end = dayStart(day + 1)
-            val now = System.currentTimeMillis()
+            val dayBeginning =
+                dayStart(selectedDay)
 
-            val shown = filtered.take(40)
+            val dayEnding =
+                dayStart(selectedDay + 1)
+
+            val now =
+                System.currentTimeMillis()
+
+            val shown =
+                filtered.take(40)
 
             for (stream in shown) {
 
-                val listing = listings[stream.id]
+                val listing =
+                    listings[stream.id]
 
-                val header = LinearLayout(activity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                }
+                val header =
+                    LinearLayout(activity).apply {
+                        orientation =
+                            LinearLayout.HORIZONTAL
 
-                val title = text(
-                    stream.title,
-                    17f,
-                    cyan
-                ).apply {
-                    setTypeface(null, Typeface.BOLD)
-                }
+                        gravity =
+                            Gravity.CENTER_VERTICAL
+                    }
+
+                val title =
+                    textLabel(
+                        stream.title,
+                        17f,
+                        cyan
+                    ).apply {
+                        setTypeface(
+                            null,
+                            Typeface.BOLD
+                        )
+                    }
 
                 header.addView(
                     title,
@@ -1047,8 +1248,10 @@ object SmartEpg {
                     )
                 )
 
-                val map = button(
-                    if (listing?.manual == true) {
+                val matchButton = button(
+                    if (
+                        listing?.manual == true
+                    ) {
                         "EDIT MATCH"
                     } else {
                         "MATCH EPG"
@@ -1057,15 +1260,23 @@ object SmartEpg {
                     chooseMapping(stream)
                 }
 
-                header.addView(map)
+                header.addView(matchButton)
                 rows.addView(header)
 
                 if (listing != null) {
                     rows.addView(
-                        text(
+                        textLabel(
                             "${listing.channel.country} • " +
-                            "${if (listing.manual) "Manual" else "Automatic"}: " +
-                            listing.channel.name,
+                            (
+                                if (
+                                    listing.manual
+                                ) {
+                                    "Manual"
+                                } else {
+                                    "Automatic"
+                                }
+                            ) +
+                            ": ${listing.channel.name}",
                             12f,
                             muted
                         )
@@ -1073,76 +1284,109 @@ object SmartEpg {
                 }
 
                 val horizontal =
-                    HorizontalScrollView(activity).apply {
-                        isHorizontalScrollBarEnabled = true
+                    HorizontalScrollView(
+                        activity
+                    ).apply {
+                        isHorizontalScrollBarEnabled =
+                            true
 
                         descendantFocusability =
-                            ViewGroup.FOCUS_AFTER_DESCENDANTS
+                            ViewGroup
+                                .FOCUS_AFTER_DESCENDANTS
                     }
 
-                val timeline = LinearLayout(activity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                }
+                val timeline =
+                    LinearLayout(activity).apply {
+                        orientation =
+                            LinearLayout.HORIZONTAL
+                    }
 
                 val programmes =
-                    listing?.programmes.orEmpty().filter {
-                        it.end > start &&
-                            it.start < end
-                    }
+                    listing?.programmes
+                        .orEmpty()
+                        .filter {
+                            it.end >
+                                dayBeginning &&
+                            it.start <
+                                dayEnding
+                        }
 
                 if (programmes.isEmpty()) {
                     timeline.addView(
-                        text(
+                        textLabel(
                             "No programme information for this date",
                             14f,
                             muted
                         )
                     )
                 } else {
-                    for (programme in programmes) {
+
+                    for (
+                        programme in programmes
+                    ) {
 
                         val begins = maxOf(
                             programme.start,
-                            start
+                            dayBeginning
                         )
 
                         val finishes = minOf(
                             programme.end,
-                            end
+                            dayEnding
                         )
 
                         val minutes =
-                            ((finishes - begins) / 60000L)
-                                .coerceAtLeast(1L)
+                            (
+                                (finishes - begins) /
+                                60000L
+                            ).coerceAtLeast(1L)
 
                         val width = dp(
                             activity,
-                            (minutes * 3L)
-                                .coerceIn(125L, 460L)
-                                .toInt()
+                            (
+                                minutes * 3L
+                            ).coerceIn(
+                                125L,
+                                460L
+                            ).toInt()
                         )
 
                         val label =
-                            "${format(programme.start, "HH:mm")}" +
+                            formatDate(
+                                programme.start,
+                                "HH:mm"
+                            ) +
                             "–" +
-                            "${format(programme.end, "HH:mm")}\n" +
+                            formatDate(
+                                programme.end,
+                                "HH:mm"
+                            ) +
+                            "\n" +
                             programme.title +
-                            if (
-                                programme.start <= now &&
-                                programme.end > now
-                            ) {
-                                "\n● NOW"
-                            } else {
-                                ""
-                            }
-
-                        val item = tile(label) {
-                            details(
-                                stream,
-                                listing!!,
-                                programme
+                            (
+                                if (
+                                    programme.start <= now &&
+                                    programme.end > now
+                                ) {
+                                    "\n● NOW"
+                                } else {
+                                    ""
+                                }
                             )
-                        }
+
+                        val currentListing =
+                            listing ?: continue
+
+                        val item =
+                            programmeTile(
+                                label
+                            ) {
+                                showDetails(
+                                    stream,
+                                    currentListing,
+                                    programme
+                                )
+                            }
 
                         val params =
                             LinearLayout.LayoutParams(
@@ -1164,9 +1408,15 @@ object SmartEpg {
                 rows.addView(horizontal)
 
                 rows.addView(
-                    View(activity).apply {
+                    android.view.View(
+                        activity
+                    ).apply {
                         setBackgroundColor(
-                            Color.rgb(42, 57, 80)
+                            Color.rgb(
+                                42,
+                                57,
+                                80
+                            )
                         )
                     },
                     LinearLayout.LayoutParams(
@@ -1178,7 +1428,7 @@ object SmartEpg {
 
             if (filtered.size > 40) {
                 rows.addView(
-                    text(
+                    textLabel(
                         "Showing 40 of ${filtered.size} channels. " +
                         "Search to narrow the list.",
                         13f,
@@ -1201,47 +1451,64 @@ object SmartEpg {
 
             executor.execute {
                 try {
-                    val found = XtreamApi.streams(
-                        account,
-                        "live"
-                    )
+                    val found =
+                        XtreamApi.streams(
+                            account,
+                            "live"
+                        )
 
-                    val guide = load(
-                        activity,
-                        account,
-                        found,
-                        force
-                    ) { message ->
+                    val guide =
+                        loadCombined(
+                            activity,
+                            account,
+                            found,
+                            force
+                        ) { message ->
 
-                        activity.runOnUiThread {
-                            if (dialog.isShowing) {
-                                status.text = message
+                            activity.runOnUiThread {
+                                if (
+                                    dialog.isShowing
+                                ) {
+                                    status.text =
+                                        message
+                                }
                             }
                         }
-                    }
 
                     activity.runOnUiThread {
                         loading = false
 
-                        if (dialog.isShowing) {
+                        if (
+                            dialog.isShowing
+                        ) {
                             streams = found
-                            channels = guide.channels
-                            listings = guide.listings
+
+                            channels =
+                                guide.channels
+
+                            listings =
+                                guide.listings
 
                             status.text =
                                 "${listings.size} matched / " +
                                 "${streams.size} IPTV channels\n" +
-                                guide.messages.joinToString(" • ")
+                                guide.messages.joinToString(
+                                    " • "
+                                )
 
-                            render()
+                            renderAction()
                         }
                     }
 
-                } catch (error: Exception) {
+                } catch (
+                    error: Exception
+                ) {
                     activity.runOnUiThread {
                         loading = false
 
-                        if (dialog.isShowing) {
+                        if (
+                            dialog.isShowing
+                        ) {
                             status.text =
                                 error.message
                                     ?: "EPG loading failed"
@@ -1251,7 +1518,7 @@ object SmartEpg {
             }
         }
 
-        reload = {
+        reloadAction = {
             loadGuide(false)
         }
 
@@ -1271,7 +1538,7 @@ object SmartEpg {
                     start: Int,
                     count: Int,
                     after: Int
-                ) {}
+                ) = Unit
 
                 override fun onTextChanged(
                     s: CharSequence?,
@@ -1279,16 +1546,16 @@ object SmartEpg {
                     before: Int,
                     count: Int
                 ) {
-                    render()
+                    renderAction()
                 }
 
                 override fun afterTextChanged(
                     s: Editable?
-                ) {}
+                ) = Unit
             }
         )
 
-        updateDays()
+        updateDaysAction()
 
         dialog.setOnDismissListener {
             executor.shutdownNow()
