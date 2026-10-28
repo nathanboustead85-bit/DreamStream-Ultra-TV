@@ -360,6 +360,8 @@ class MainActivity : Activity() {
         }
     }
 
+    // STAGE 4: IMPROVED TV HOME TILES
+
     private fun tile(
         title: String,
         subtitle: String,
@@ -368,14 +370,16 @@ class MainActivity : Activity() {
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+
             isFocusable = true
+            isFocusableInTouchMode = true
             isClickable = true
 
-            setPadding(22, 19, 22, 19)
+            setPadding(30, 24, 30, 24)
 
             background = GradientDrawable().apply {
                 setColor(Color.rgb(22, 33, 57))
-                cornerRadius = 18f
+                cornerRadius = 22f
                 setStroke(
                     2,
                     Color.rgb(48, 75, 112)
@@ -384,46 +388,87 @@ class MainActivity : Activity() {
 
             setOnClickListener { click() }
 
-            setOnFocusChangeListener { _, focused ->
-                background = GradientDrawable().apply {
-                    setColor(
-                        if (focused) {
-                            Color.rgb(32, 66, 106)
-                        } else {
-                            Color.rgb(22, 33, 57)
-                        }
-                    )
+            setOnFocusChangeListener { view, focused ->
 
-                    cornerRadius = 18f
+                view.background =
+                    GradientDrawable().apply {
+                        setColor(
+                            if (focused) {
+                                Color.rgb(20, 65, 105)
+                            } else {
+                                Color.rgb(22, 33, 57)
+                            }
+                        )
 
-                    setStroke(
-                        if (focused) 5 else 2,
-                        if (focused) {
-                            cyan
-                        } else {
-                            Color.rgb(48, 75, 112)
-                        }
+                        cornerRadius = 22f
+
+                        setStroke(
+                            if (focused) 5 else 2,
+                            if (focused) {
+                                cyan
+                            } else {
+                                Color.rgb(48, 75, 112)
+                            }
+                        )
+                    }
+
+                view.animate()
+                    .scaleX(
+                        if (focused) 1.025f else 1f
                     )
+                    .scaleY(
+                        if (focused) 1.025f else 1f
+                    )
+                    .setDuration(140L)
+                    .start()
+
+                if (focused) {
+                    view.post {
+                        view.requestRectangleOnScreen(
+                            android.graphics.Rect(
+                                0,
+                                0,
+                                view.width,
+                                view.height
+                            ),
+                            false
+                        )
+                    }
                 }
-
-                scaleX = if (focused) 1.02f else 1f
-                scaleY = if (focused) 1.02f else 1f
             }
         }
 
-        card.addView(
-            text(title, 23f).apply {
-                setTypeface(null, Typeface.BOLD)
-            }
-        )
+        val heading = text(
+            title,
+            24f
+        ).apply {
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+        }
 
-        card.addView(
-            text(subtitle, 15f).apply {
-                setTextColor(Color.LTGRAY)
-            }
-        )
+        val description = text(
+            subtitle,
+            16f
+        ).apply {
+            setTextColor(
+                Color.rgb(180, 200, 220)
+            )
+        }
 
-        return card
+        card.addView(heading)
+        card.addView(description)
+
+        val margin = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            bottomMargin = 14
+        }
+
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(card, margin)
+        }
     }
 
     private fun showHome() {
@@ -559,7 +604,7 @@ class MainActivity : Activity() {
             }
         )
 
-        // NEW SETTINGS SCREEN
+        // SETTINGS
         root.addView(
             tile(
                 "SETTINGS",
